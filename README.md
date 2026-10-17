@@ -106,6 +106,18 @@ holbuild -j"$(nproc)" build
 `holbuild buildhol` builds and caches the HOL toolchain and project dependencies specified by `holproject.toml`.
 
 Release instructions, including the prebuilt holbuild archive artefact, are in [docs/release.md](docs/release.md).
+### Emitting the test runner
+
+To emit the existing CV translation of `run_test` and its dependency closure:
+
+```bash
+holbuild build --tactic-timeout 30 vyperTestEmitTheory
+```
+
+This writes `tests/.emit/RunTestML.sig` and `tests/.emit/RunTestML.sml`.
+The emitted entrypoint takes a CV-encoded trace list, not JSON or Vyper source.
+This target only emits ML; it does not compile or execute it.
+
 
 ### Running the Vyper test suite
 
