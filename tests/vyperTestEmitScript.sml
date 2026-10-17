@@ -4,7 +4,7 @@ Ancestors
   vyperTestRunner cv jsonToVyper vyperState vyperValueOperation
   jsonToVyperCV
 Libs
-  EmitML cv_transLib cv_repLib cv_typeLib cv_miscLib
+  EmitML cv_transLib cv_repLib cv_typeLib cv_miscLib wordsLib
 
 fun holbuild_extra_outputs (_ : string list) = ();
 val () = holbuild_extra_outputs
@@ -53,13 +53,15 @@ fun head_of th = fst (strip_comb (lhs (concl (SPEC_ALL th))));
 fun add_equation (th,acc) =
   if List.exists (aconv (head_of th) o head_of) acc then acc else th :: acc;
 (* Word translations can retain closed DIMINDEX arithmetic inside Num.
-   Normalize those payloads with kernel conversions before CV-only traversal. *)
+   EVAL alone leaves DIMINDEX unchanged; DEPTH_CONV repeats successful conversions,
+   so require progress as well as using the word-aware kernel conversion. *)
 fun normalize_cv_literals (i,{thm = DefnBase.STDEQNS th,...}
                               : DefnBase.defn_presentation) = let
       val normalized = CONV_RULE (DEPTH_CONV (fn tm =>
         if cvSyntax.is_cv_num tm andalso null (free_vars (rand tm)) andalso
            not (numSyntax.is_numeral (rand tm))
-        then RAND_CONV EVAL tm else NO_CONV tm)) th
+        then RAND_CONV (CHANGED_CONV wordsLib.WORD_EVAL_CONV) tm
+        else NO_CONV tm)) th
     in
       if aconv (concl th) (concl normalized) then () else let
         val name = "native_cv_literals_" ^ Int.toString i
@@ -98,11 +100,27 @@ val primitives =
    cv_add_def, cv_sub_def, cv_mul_def, cv_div_def, cv_mod_def,
    cv_eq_def, cv_lt_def];
 val normalize = REWRITE_RULE [cv_if_native, GSYM arithmeticTheory.ONE];
+(* EmitML's DEFN path builds its nonfix declaration from HOL names, ignoring
+   ConstMapML renaming. Print the private equations with its public printer
+   instead, so dotted record-accessor names never enter that declaration. *)
+fun register_primitive constructor c =
+  ConstMapML.prim_insert
+    (c, (constructor, "RunTest", #Name (dest_thy_const c), type_of c));
+val () = List.app (register_primitive false o head_of)
+  (List.concat (map (CONJUNCTS o SPEC_ALL) primitives));
+val () = List.app (fn name => register_primitive true
+  (prim_mk_const {Thy = "cv", Name = name})) ["Num","Pair"];
+val runtime_equations = let
+  val chunks = ref []
+  val th = !EmitML.reshape_thm_hook (LIST_CONJ (map normalize equations))
+  val () = PP.prettyPrint (fn s => chunks := s :: !chunks,75)
+    (EmitML.pp_defn_as_ML ["RunTest","num"] (concl th))
+in String.concat (List.rev (!chunks)) end;
 val () = emitML ".emit" ("RunTest",
   [OPEN ["num"], MLSIG "type num = numML.num",
    DATATYPE `cv = Num num | Pair cv cv`] @
   map (DEFN o normalize) primitives @
-  [DEFN (LIST_CONJ (map normalize equations)),
+  [MLSTRUCT runtime_equations,
    MLSIG "val run_test : cv -> cv",
    MLSTRUCT ("val run_test = " ^ #3 (ConstMapML.apply entry)),
    MLSIG "val translate_annotated_ast : cv -> cv",
@@ -124,13 +142,16 @@ fun key c = let val {Thy,Name,...} = dest_thy_const c
 fun symbolic vars value = let
   val cvs = List.map (fn (i,_) => mk_var ("cvarg" ^ Int.toString i,cvSyntax.cv))
     (Lib.enumerate 0 vars)
+  (* cv_rep_for translates variables trivially, before consulting its hypotheses.
+     Abstract their from-functions in the resulting kernel-derived encoding. *)
   fun assumption (v,cv) =
-    ASSUME (mk_cv_rep ``T`` cv (cv_typeLib.from_term_for (type_of v)) v)
+    ASSUME (mk_eq (mk_comb (cv_typeLib.from_term_for (type_of v),v),cv))
   val assumptions = ListPair.map assumption (vars,cvs)
-  val th = cv_rep_for (ListPair.zip (vars,assumptions)) value
+  val th = CONV_RULE (cv_rep_cv_tm_conv (PURE_REWRITE_CONV assumptions))
+    (cv_rep_for [] value)
   val expr = cv_rep_cv_tm (concl th)
   fun tree tm =
-    is_var tm orelse
+    List.exists (aconv tm) cvs orelse
     (cvSyntax.is_cv_num tm andalso numSyntax.is_numeral (rand tm)) orelse
     (cvSyntax.is_cv_pair tm andalso
      let val (a,b) = cvSyntax.dest_cv_pair tm in tree a andalso tree b end)
@@ -140,7 +161,7 @@ in (cvs,expr) end;
 fun encoder (vars,expr) = (
   put ("fn [" ^ String.concatWith "," (map (fst o dest_var) vars) ^ "] => ");
   PP.prettyPrint (fn s => put s,100)
-    (Parse.mlower (EmitML.pp_term_as_ML ["RunTest"] RIGHT expr));
+    (EmitML.pp_term_as_ML ["RunTest"] RIGHT expr);
   put " | _ => raise Fail \"constructor argument count\"");
 val constructors = List.filter TypeBase.is_constructor
   (List.concat (map constants ["jsonAST","vyperTestRunner","contractABI","vyperAST"]));

@@ -108,7 +108,7 @@ holbuild -j"$(nproc)" build
 Release instructions, including the prebuilt holbuild archive artefact, are in [docs/release.md](docs/release.md).
 ### JSON runner demo
 
-With `holbuild`, MLton, and Python 3 on `PATH`, run:
+With `holbuild` v0.11.3 or newer, MLton, and Python 3 on `PATH`, run:
 
 ```bash
 ./tools/demo_run_test.sh
@@ -136,6 +136,15 @@ Add `--smoke` to check native/HOL parity. The executable accepts
 `--dump-input [export.json]` for diagnostic CV input/result encodings; normal
 operation takes JSON, not CV trees. The native executable is not itself a kernel
 proof; `vyperJsonReplayLib.replay_file` provides kernel-checked replay.
+
+The smoke check compares exact encoded inputs and results for all five bundled
+cases, not just pass/fail status. Import errors are reported on stderr; `{}` is
+rejected because it contains no tests, while `[]` runs the empty trace successfully.
+
+The build first emits HOL-derived SML, then invokes MLton. Native compilation can
+take substantially longer than emission. The emitter normalizes word dimensions
+with a progress-checked conversion: plain `EVAL` leaves `dimindex (:8)` unchanged
+and can loop indefinitely when used inside `DEPTH_CONV`.
 
 
 ### Running the Vyper test suite
