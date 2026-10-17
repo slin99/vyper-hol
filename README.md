@@ -106,17 +106,36 @@ holbuild -j"$(nproc)" build
 `holbuild buildhol` builds and caches the HOL toolchain and project dependencies specified by `holproject.toml`.
 
 Release instructions, including the prebuilt holbuild archive artefact, are in [docs/release.md](docs/release.md).
-### Emitting the test runner
+### JSON runner demo
 
-To emit the existing CV translation of `run_test` and its dependency closure:
+With `holbuild`, MLton, and Python 3 on `PATH`, run:
 
 ```bash
-holbuild build --tactic-timeout 30 vyperTestEmitTheory
+./tools/demo_run_test.sh
 ```
 
-This writes `tests/.emit/RunTestML.sig` and `tests/.emit/RunTestML.sml`.
-The emitted entrypoint takes a CV-encoded trace list, not JSON or Vyper source.
-This target only emits ML; it does not compile or execute it.
+The script builds `tests/.emit/run-test`, checks its encoded inputs and results
+against HOL kernel replay, and demonstrates both supported input forms:
+
+```bash
+# Exporter JSON containing named tests and their setup fixtures:
+tests/.emit/run-test tests/fixtures/run_test_json/basic.json
+
+# A JSON array of deployment/call traces, read from stdin:
+tests/.emit/run-test < traces.json
+```
+
+The bundled export has three passing cases and two intentional failures (an
+output mismatch and an unexpected revert). The demo handles its expected exit
+status of 1, then pipes a passing deployment/call trace array into the runner.
+Each case produces one JSON line with `name`, `status`, and, on failure, `error`.
+The runner exits 0 when every case passes, or 1 on a failed case or import error.
+
+To build without running the demo, use `python3 tools/emit_run_test.py`.
+Add `--smoke` to check native/HOL parity. The executable accepts
+`--dump-input [export.json]` for diagnostic CV input/result encodings; normal
+operation takes JSON, not CV trees. The native executable is not itself a kernel
+proof; `vyperJsonReplayLib.replay_file` provides kernel-checked replay.
 
 
 ### Running the Vyper test suite
