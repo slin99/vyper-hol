@@ -5288,7 +5288,7 @@ Theorem eval_exprs_failure_builtin_case[local]:
   ((case
       case (INR x,st) of
         (INL vs,s'') =>
-          (case evaluate_builtin cx s''.accounts ty bt vs of
+          (case evaluate_builtin_typed cx s''.accounts ty source_es bt vs of
              INL v => return v
            | INR e => raise (Error e)) s''
       | (INR e,s'') => (INR e,s'')
@@ -5463,29 +5463,27 @@ Resume eval_all_type_sound_mutual[Expr_Builtin]:
       (gvs[LIST_REL_EL_EQN, LIST_EQ_REWRITE, EL_MAP]) >>
     `?ret_tv. evaluate_type (get_tenv cx) ty = SOME ret_tv` by
       (gvs[well_formed_type_def, IS_SOME_EXISTS]) >>
-    Cases_on `evaluate_builtin cx args_st.accounts ty bt vs` >>
-    rename1 `evaluate_builtin cx args_st.accounts ty bt vs = builtin_res` >>
-    Cases_on `builtin_res` >>
+    Cases_on `evaluate_builtin_typed cx args_st.accounts ty es bt vs` >>
     FIRST [
-      rename1 `evaluate_builtin cx args_st.accounts ty bt vs = INL builtin_v` >>
+      rename1 `evaluate_builtin_typed cx args_st.accounts ty es bt vs = INL builtin_v` >>
       strip_tac >>
       gvs[nested_return_value_case, no_type_error_result_def] >>
       gvs[expr_result_typed_def, expr_runtime_typed_def, expr_type_def,
           toplevel_value_typed_Value] >>
       mp_tac (Q.INST [`blt` |-> `bt`, `ts` |-> `MAP expr_type es`,
+                       `source_es` |-> `es`,
                        `acc` |-> `(args_st:evaluation_state).accounts`,
                        `tv` |-> `ret_tv`, `v` |-> `builtin_v`,
                        `cx` |-> `cx`, `tvs` |-> `tvs`, `vs` |-> `vs`,
                        `ty` |-> `ty`]
-                well_typed_builtin_app_success_type) >>
+                well_typed_builtin_app_typed_success_type) >>
       simp[],
       strip_tac >>
       gvs[nested_raise_error_case, no_type_error_result_def] >>
       strip_tac >> spose_not_then assume_tac >> gvs[] >>
       `!item. bt = Env item ==> item <> MsgGas` by
         (rpt strip_tac >> gvs[well_typed_builtin_app_def]) >>
-      drule_all well_typed_builtin_app_no_type_error >>
-      disch_then (qspec_then `msg` mp_tac) >> gvs[]]) >>
+      metis_tac[well_typed_builtin_app_typed_no_type_error]]) >>
   strip_tac >> gvs[eval_exprs_failure_builtin_case, no_type_error_result_def]
 QED
 

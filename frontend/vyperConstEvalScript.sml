@@ -27,6 +27,15 @@ Proof
   rpt CASE_TAC >> simp[]
 QED
 
+Theorem closed_integer_numeric_type[local]:
+  !e. closed_integer e ==>
+    (?bits. expr_type e = BaseT (UintT bits)) \/
+    (?bits. expr_type e = BaseT (IntT bits))
+Proof
+  ho_match_mp_tac closed_integer_ind >>
+  rw[closed_integer_def, expr_type_def]
+QED
+
 Theorem closed_integer_context_independent:
   !e. closed_integer e ==>
     !cx st cx' st'. eval_pure_expr cx st e = eval_pure_expr cx' st' e
@@ -37,13 +46,15 @@ Proof
   fs[] >>
   qpat_x_assum `!a b c d. _` (qspecl_then [`cx'`, `st'`, `cx`, `st`] assume_tac) >>
   qpat_x_assum `!a b c d. _` (qspecl_then [`cx'`, `st'`, `cx`, `st`] assume_tac) >>
+  imp_res_tac closed_integer_numeric_type >>
   qpat_x_assum `closed_integer _` (mp_tac o MATCH_MP closed_integer_value) >>
   qpat_x_assum `closed_integer _` (mp_tac o MATCH_MP closed_integer_value) >>
   disch_then (qspecl_then [`cx`, `st`] mp_tac) >>
   disch_then strip_assume_tac >>
   disch_then (qspecl_then [`cx`, `st`] mp_tac) >>
   simp[] >> rpt strip_tac >>
-  simp[materialise_def, return_def, evaluate_builtin_def, evaluate_type_def]
+  simp[materialise_def, return_def, evaluate_builtin_typed_def,
+       evaluate_builtin_def, evaluate_type_def]
 QED
 
 (* Failure includes unsupported syntax and runtime arithmetic errors. *)

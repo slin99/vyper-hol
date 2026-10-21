@@ -1315,7 +1315,7 @@ Proof
                expr_type_def, toplevel_value_typed_def] >>
           metis_tac[vyperTypeBuiltinsTheory.Len_builtin_sound])
       >- (`?vs v. eval_pure_exprs cx (initial_state am [FEMPTY]) es = SOME vs /\
-             evaluate_builtin cx (initial_state am [FEMPTY]).accounts v8 bt vs = INL v /\
+             evaluate_builtin_typed cx (initial_state am [FEMPTY]).accounts v8 es bt vs = INL v /\
              tvl = Value v` by
            (qpat_x_assum `eval_pure_expr _ _ (Builtin _ _ _) = _` mp_tac >>
             simp[Once eval_pure_expr_def] >> gvs[AllCaseEqs()] >>
@@ -1345,16 +1345,17 @@ Proof
       `accounts_well_typed (initial_state am [FEMPTY]).accounts` by
         (simp[initial_state_def] >> metis_tac[machine_well_typed_accounts]) >>
       qexists_tac `ret_tv` >> conj_tac >- metis_tac[] >>
-      irule vyperTypeBuiltinsTheory.well_typed_builtin_app_success_type >>
+      irule vyperTypeBuiltinsTheory.well_typed_builtin_app_typed_success_type >>
       simp[] >> metis_tac[])
   >- (rpt strip_tac >> gvs[] >>
       qpat_x_assum `eval_pure_expr _ _ (Builtin _ _ _) = _` mp_tac >>
-      simp[Once eval_pure_expr_def] >>
+      simp[Once eval_pure_expr_def, evaluate_builtin_typed_def] >>
       Cases_on `es` >> gvs[AllCaseEqs()] >>
       Cases_on `t` >> gvs[AllCaseEqs()] >> metis_tac[])
   >- (rpt strip_tac >>
       qpat_x_assum `eval_pure_expr _ _ (Builtin _ _ _) = _` mp_tac >>
-      simp[Once eval_pure_expr_def] >> gvs[AllCaseEqs()] >> metis_tac[]))
+      simp[Once eval_pure_expr_def, evaluate_builtin_typed_def] >>
+      gvs[AllCaseEqs()] >> metis_tac[]))
   >> (rpt gen_tac >> strip_tac >>
       Cases_on `tb` >> gvs[constant_type_builtin_def] >>
       rpt strip_tac >>

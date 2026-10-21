@@ -3384,6 +3384,79 @@ Proof
   intLib.ARITH_TAC
 QED
 
+Theorem membership_results_same_shape[local]:
+  bop = In \/ bop = NotIn ==>
+  evaluate_binop u tv bop v1 v2 <> evaluate_binop u tv' bop v1 v2 ==>
+  ?b b'. evaluate_binop u tv bop v1 v2 = INL (BoolV b) /\
+          evaluate_binop u tv' bop v1 v2 = INL (BoolV b')
+Proof
+  rw[] >> Cases_on `v2` >> Cases_on `v1` >>
+  gvs[evaluate_binop_def, binop_negate_def]
+QED
+
+Theorem typed_builtin_results_same_shape[local]:
+  evaluate_builtin_typed cx acc ty source_es blt vs <>
+    evaluate_builtin cx acc ty blt vs ==>
+  ?b b'.
+    evaluate_builtin_typed cx acc ty source_es blt vs = INL (BoolV b) /\
+    evaluate_builtin cx acc ty blt vs = INL (BoolV b')
+Proof
+  Cases_on `source_es` >>
+  TRY (
+    rename1 `evaluate_builtin_typed _ _ _ (_::tail_sources) _ _` >>
+    Cases_on `tail_sources` >>
+    TRY (
+      rename1 `evaluate_builtin_typed _ _ _ (_::_::more_sources) _ _` >>
+      Cases_on `more_sources`)) >>
+  Cases_on `vs` >>
+  TRY (
+    rename1 `evaluate_builtin_typed _ _ _ _ _ (_::tail_values)` >>
+    Cases_on `tail_values` >>
+    TRY (
+      rename1 `evaluate_builtin_typed _ _ _ _ _ (_::_::more_values)` >>
+      Cases_on `more_values`)) >>
+  Cases_on `blt` >> simp[evaluate_builtin_typed_def] >>
+  rename1 `Bop bop` >>
+  Cases_on `bop = In \/ bop = NotIn` >>
+  gvs[evaluate_builtin_def, LET_THM] >>
+  metis_tac[membership_results_same_shape]
+QED
+
+Theorem well_typed_builtin_app_typed_no_type_error:
+  well_typed_builtin_app ty blt ts /\ blt <> Len /\
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs /\
+  evaluate_type (get_tenv cx) ty = SOME tv /\
+  LIST_REL value_has_type tvs vs /\ context_well_typed cx /\ accounts_well_typed acc /\
+  (!item. blt = Env item ==> item <> MsgGas) ==>
+  !msg. evaluate_builtin_typed cx acc ty source_es blt vs <> INR (TypeError msg)
+Proof
+  rpt strip_tac >>
+  drule_all well_typed_builtin_app_no_type_error >> strip_tac >>
+  Cases_on `evaluate_builtin_typed cx acc ty source_es blt vs =
+            evaluate_builtin cx acc ty blt vs`
+  >- gvs[] >>
+  drule typed_builtin_results_same_shape >> gvs[]
+QED
+
+Theorem well_typed_builtin_app_typed_success_type:
+  well_typed_builtin_app ty blt ts /\ blt <> Len /\
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs /\
+  evaluate_type (get_tenv cx) ty = SOME tv /\
+  LIST_REL value_has_type tvs vs /\ context_well_typed cx /\ accounts_well_typed acc /\
+  evaluate_builtin_typed cx acc ty source_es blt vs = INL v ==>
+  value_has_type tv v
+Proof
+  rpt strip_tac >>
+  `!v'. evaluate_builtin cx acc ty blt vs = INL v' ==>
+        value_has_type tv v'` by
+    (rpt strip_tac >> drule_all well_typed_builtin_app_success_type >> simp[]) >>
+  Cases_on `evaluate_builtin_typed cx acc ty source_es blt vs =
+            evaluate_builtin cx acc ty blt vs`
+  >- metis_tac[] >>
+  drule typed_builtin_results_same_shape >> rpt strip_tac >>
+  gvs[] >> res_tac >> gvs[value_has_type_inv]
+QED
+
 Theorem return_INL_value[local]:
   return x st = (INL y, st') ==> y = x
 Proof
