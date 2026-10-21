@@ -5304,7 +5304,7 @@ Theorem eval_exprs_failure_type_builtin_case[local]:
   ((case (INR x,st) of
       (INL vs,s'') =>
         (case
-           (case evaluate_type_builtin cx tb target_ty vs of
+           (case evaluate_type_builtin_typed cx tb target_ty source_es vs of
               INL v => return v
             | INR e => raise (Error e)) s''
          of
@@ -5324,17 +5324,15 @@ Theorem type_builtin_exprs_runtime_no_type_error_stmt_adapter[local]:
   well_formed_type env.type_defs result_ty /\
   exprs_runtime_typed env es vs /\
   context_well_typed cx ==>
-  !msg. evaluate_type_builtin cx tb target_ty vs <> INR (TypeError msg)
+  !msg. evaluate_type_builtin_typed cx tb target_ty es vs <>
+    INR (TypeError msg)
 Proof
   rw[exprs_runtime_typed_def] >>
   `MAP (evaluate_type (get_tenv cx)) (MAP expr_type es) = MAP SOME tvs` by
     gvs[LIST_REL_EL_EQN, LIST_EQ_REWRITE, EL_MAP] >>
   `?result_tv. evaluate_type (get_tenv cx) result_ty = SOME result_tv` by
     gvs[well_formed_type_def, IS_SOME_EXISTS] >>
-  irule well_typed_type_builtin_no_type_error >>
-  simp[] >>
-  qexistsl_tac [`result_tv`, `result_ty`, `MAP expr_type es`, `tvs`] >>
-  gvs[]
+  metis_tac[well_typed_type_builtin_typed_no_type_error]
 QED
 
 Theorem type_builtin_exprs_runtime_success_type_stmt_adapter[local]:
@@ -5344,7 +5342,7 @@ Theorem type_builtin_exprs_runtime_success_type_stmt_adapter[local]:
   well_formed_type env.type_defs result_ty /\
   exprs_runtime_typed env es vs /\
   context_well_typed cx /\
-  evaluate_type_builtin cx tb target_ty vs = INL v ==>
+  evaluate_type_builtin_typed cx tb target_ty es vs = INL v ==>
   expr_result_typed env (TypeBuiltin result_ty tb target_ty es) (Value v)
 Proof
   rw[exprs_runtime_typed_def, expr_result_typed_def, expr_runtime_typed_def,
@@ -5354,9 +5352,7 @@ Proof
   `?result_tv. evaluate_type (get_tenv cx) result_ty = SOME result_tv` by
     gvs[well_formed_type_def, IS_SOME_EXISTS] >>
   qexists_tac `result_tv` >> simp[] >>
-  irule well_typed_type_builtin_success_type >>
-  qexistsl_tac [`cx`, `result_ty`, `target_ty`, `tb`, `MAP expr_type es`, `tvs`, `vs`] >>
-  gvs[]
+  metis_tac[well_typed_type_builtin_typed_success_type]
 QED
 
 Resume eval_all_type_sound_mutual[Expr_Builtin]:
@@ -5524,15 +5520,15 @@ Resume eval_all_type_sound_mutual[Expr_TypeBuiltin]:
   >- (rename1 `eval_exprs cx es st = (INL vs,args_st)` >>
       qpat_x_assum `case INL vs of INL vs => exprs_runtime_typed env es vs | INR v1 => T`
         mp_tac >> simp_tac(srw_ss())[] >> strip_tac >>
-      Cases_on `evaluate_type_builtin cx tb typ vs`
-      >- (rename1 `evaluate_type_builtin cx tb typ vs = INL builtin_v` >>
+      Cases_on `evaluate_type_builtin_typed cx tb typ es vs`
+      >- (rename1 `evaluate_type_builtin_typed cx tb typ es vs = INL builtin_v` >>
           strip_tac >>
           gvs[lift_sum_def, return_def, no_type_error_result_def] >>
           irule type_builtin_exprs_runtime_success_type_stmt_adapter >>
           simp[] >>
           qexistsl_tac [`cx`,`vs`] >>
           simp[]) >>
-      rename1 `evaluate_type_builtin cx tb typ vs = INR type_exn` >>
+      rename1 `evaluate_type_builtin_typed cx tb typ es vs = INR type_exn` >>
       strip_tac >>
       gvs[lift_sum_def, raise_def, no_type_error_result_def] >>
       strip_tac >> spose_not_then assume_tac >> gvs[] >>

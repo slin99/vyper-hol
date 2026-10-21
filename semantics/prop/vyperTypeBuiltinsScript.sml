@@ -3766,6 +3766,38 @@ Proof
      , metis_tac[well_typed_abi_encode_tuple_success] ]
 QED
 
+Theorem well_typed_type_builtin_typed_no_type_error:
+  type_builtin_result_ok (get_tenv cx) tb result_ty target_ty ts ∧
+  well_typed_type_builtin_args tb target_ty ts ∧
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs ∧
+  evaluate_type (get_tenv cx) result_ty = SOME result_tv ∧
+  LIST_REL value_has_type tvs vs ∧ context_well_typed cx ==>
+  !msg. evaluate_type_builtin_typed cx tb target_ty source_es vs <> INR (TypeError msg)
+Proof
+  rpt strip_tac >>
+  drule_all well_typed_type_builtin_no_type_error >> strip_tac >>
+  gvs[evaluate_type_builtin_typed_def, AllCaseEqs()]
+QED
+
+Theorem well_typed_type_builtin_typed_success_type:
+  type_builtin_result_ok (get_tenv cx) tb result_ty target_ty ts ∧
+  well_typed_type_builtin_args tb target_ty ts ∧
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs ∧
+  evaluate_type (get_tenv cx) result_ty = SOME result_tv ∧
+  LIST_REL value_has_type tvs vs ∧ context_well_typed cx ∧
+  evaluate_type_builtin_typed cx tb target_ty source_es vs = INL v ==>
+  value_has_type result_tv v
+Proof
+  rpt strip_tac >>
+  `!v'. evaluate_type_builtin cx tb target_ty vs = INL v' ==>
+        value_has_type result_tv v'` by
+    (rpt strip_tac >>
+     drule_all well_typed_type_builtin_success_type >> simp[]) >>
+  gvs[evaluate_type_builtin_typed_def, AllCaseEqs()] >>
+  gvs[type_builtin_result_ok_def, evaluate_type_def, value_has_type_def,
+      listTheory.PAD_LEFT, MAX_DEF]
+QED
+
 (* ===== Calls / special targets ===== *)
 
 (* TODO(cleanup): word_size arithmetic facts are general VFM/word-size support

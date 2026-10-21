@@ -1372,8 +1372,8 @@ Proof
            vyperTypeExprSoundnessTheory.expr_runtime_typed_def,
            expr_type_def, toplevel_value_typed_def] >>
       qexists_tac `ret_tv` >> conj_tac >- metis_tac[] >>
-      gvs[type_builtin_result_ok_def, evaluate_type_builtin_def,
-          AllCaseEqs()]
+      gvs[type_builtin_result_ok_def, evaluate_type_builtin_typed_def,
+          evaluate_type_builtin_def, AllCaseEqs()]
       >- (drule vyperTypeDefaultsTheory.default_value_has_type_thm >> simp[])
       >- (`evaluate_max_value v10 = INL v` by metis_tac[] >>
           drule_all vyperTypeConversionsTheory.evaluate_max_value_well_typed >> simp[])
