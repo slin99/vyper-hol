@@ -167,7 +167,7 @@ Definition decode_strictness_exempt_def:
 End
 
 Definition source_exempt_def:
-  source_exempt tops (src : (value + exception) # abstract_machine # call_request list) <=>
+  source_exempt tops (src : (value + exception) # abstract_machine # call_request list # num list) <=>
     case FST src of INR (Error e) => decode_strictness_exempt tops e | _ => F
 End
 
@@ -345,8 +345,8 @@ End
 Definition call_result_rel_def:
   call_result_rel tops ret am tx es r es' <=>
     let trace = call_trace es in
-    case call_external (SOME (MAP SND trace)) am tx of
-      (INL v, am', rqs) =>
+    case call_external (SOME (MAP SND trace)) [] am tx of
+      (INL v, am', rqs, _) =>
         ?out lgs.
           frame_outcome es r es' NONE out lgs /\
           return_bytes tops ret v out /\
@@ -355,13 +355,13 @@ Definition call_result_rel_def:
           logs_correspond (compiled_event_info tops) (type_env tops)
             tx.target am'.logs lgs /\
           rqs = MAP FST trace
-    | (INR (AssertException s), _, _) =>
+    | (INR (AssertException s), _, _, _) =>
         ?exc out lgs. frame_outcome es r es' (SOME exc) out lgs /\
                       (exc = Reverted \/ s = "UNREACHABLE")
-    | (INR (Error e), _, _) =>
+    | (INR (Error e), _, _, _) =>
         decode_strictness_exempt tops e \/
         ?exc out lgs. frame_outcome es r es' (SOME exc) out lgs
-    | (INR BreakException, _, _) => F
-    | (INR ContinueException, _, _) => F
-    | (INR (ReturnException _), _, _) => F
+    | (INR BreakException, _, _, _) => F
+    | (INR ContinueException, _, _, _) => F
+    | (INR (ReturnException _), _, _, _) => F
 End

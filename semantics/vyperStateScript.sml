@@ -129,6 +129,7 @@ Datatype:
   ; pending_deletions: address list
   ; outcomes: extCallOracle$call_outcome list option
   ; requests: extCallOracle$call_request list
+  ; gas_observations: num list
   |>
 End
 
@@ -141,7 +142,8 @@ Definition empty_state_def:
     tStorage := empty_transient_storage;
     pending_deletions := [];
     outcomes := NONE;
-    requests := []
+    requests := [];
+    gas_observations := []
   |>
 End
 
@@ -254,6 +256,87 @@ End
 val () = lift_sum_def
   |> SRULE [FUN_EQ_THM, sum_CASE_rator]
   |> cv_auto_trans;
+
+(* Invocation-local execution evidence.  Even invalid observations consume their
+   head; account/storage rollback must never rewind this stream. *)
+Definition observe_msg_gas_def:
+  observe_msg_gas st =
+    case st.gas_observations of
+      [] => (INR (Error (RuntimeError "gas observations exhausted")), st)
+    | g::gs =>
+        let st' = st with gas_observations := gs in
+        if g < 2 ** 256 then (INL (IntV (&g)), st')
+        else (INR (Error (RuntimeError "gas observation out of range")), st')
+End
+
+val () = cv_auto_trans observe_msg_gas_def;
+
+(* Stateful environment reads cannot go through the pure builtin evaluator. *)
+Definition eval_builtin_def:
+  eval_builtin cx ty bt vs st =
+    if bt = Env MsgGas /\ vs = [] then observe_msg_gas st
+    else lift_sum (evaluate_builtin cx st.accounts ty bt vs) st
+End
+
+val () = eval_builtin_def
+  |> SRULE [lift_sum_def, return_def, raise_def, sum_CASE_rator]
+  |> cv_auto_trans;
+
+Theorem observe_msg_gas_state:
+  observe_msg_gas st = (res,st') ==>
+  st' = st with gas_observations := st'.gas_observations
+Proof
+  Cases_on `st.gas_observations` >>
+  simp[observe_msg_gas_def] >> rw[] >> gvs[]
+QED
+
+Theorem eval_builtin_state:
+  eval_builtin cx ty bt vs st = (res,st') ==>
+  st' = st with gas_observations := st'.gas_observations
+Proof
+  rw[eval_builtin_def] >- metis_tac[observe_msg_gas_state] >>
+  Cases_on `evaluate_builtin cx st.accounts ty bt vs` >>
+  gvs[lift_sum_def, return_def, raise_def]
+QED
+
+Theorem eval_builtin_preserves_fields:
+  eval_builtin cx ty bt vs st = (res,st') ==>
+  st'.accounts = st.accounts /\ st'.tStorage = st.tStorage /\
+  st'.immutables = st.immutables /\ st'.logs = st.logs /\
+  st'.scopes = st.scopes /\ st'.pending_deletions = st.pending_deletions /\
+  st'.outcomes = st.outcomes /\ st'.requests = st.requests
+Proof
+  strip_tac >> drule eval_builtin_state >>
+  disch_then (fn th => REWRITE_TAC (map
+    (fn f => SIMP_RULE (srw_ss()) [] (AP_TERM f th))
+    [``\s:evaluation_state. s.accounts``, ``\s:evaluation_state. s.tStorage``,
+     ``\s:evaluation_state. s.immutables``, ``\s:evaluation_state. s.logs``,
+     ``\s:evaluation_state. s.scopes``, ``\s:evaluation_state. s.pending_deletions``,
+     ``\s:evaluation_state. s.outcomes``, ``\s:evaluation_state. s.requests``]))
+QED
+
+Theorem observe_msg_gas_consumes:
+  observe_msg_gas st = (res,st') ==>
+  st'.gas_observations =
+    (case st.gas_observations of [] => [] | g::gs => gs)
+Proof
+  Cases_on `st.gas_observations` >>
+  simp[observe_msg_gas_def] >> rw[] >> gvs[]
+QED
+
+Theorem eval_builtin_ordinary:
+  bt <> Env MsgGas \/ vs <> [] ==>
+  eval_builtin cx ty bt vs st =
+    lift_sum (evaluate_builtin cx st.accounts ty bt vs) st
+Proof
+  simp[eval_builtin_def] >> metis_tac[]
+QED
+
+Theorem eval_builtin_gas[simp]:
+  eval_builtin cx ty (Env MsgGas) [] st = observe_msg_gas st
+Proof
+  simp[eval_builtin_def]
+QED
 
 Definition lift_sum_runtime_def:
   lift_sum_runtime x =

@@ -20,13 +20,13 @@ Proof
 QED
 
 Theorem source_exempt_call_result_rel:
-  source_exempt tops (call_external (SOME (MAP SND (call_trace es))) am tx) ==>
+  source_exempt tops (call_external (SOME (MAP SND (call_trace es))) [] am tx) ==>
   call_result_rel tops ret am tx es r es'
 Proof
   simp[source_exempt_def, call_result_rel_def, LET_THM] >>
-  Cases_on `call_external (SOME (MAP SND (call_trace es))) am tx` >>
-  rename1 `call_external _ am tx = (res, tail)` >>
-  Cases_on `tail` >> Cases_on `res` >> simp[] >>
+  Cases_on `call_external (SOME (MAP SND (call_trace es))) [] am tx` >>
+  rename1 `call_external _ _ am tx = (res, tail)` >>
+  PairCases_on `tail` >> Cases_on `res` >> simp[] >>
   rename1 `INR exc` >> Cases_on `exc` >> simp[]
 QED
 
@@ -78,8 +78,8 @@ Proof
 QED
 
 Theorem external_call_result_rel_frame_success:
-  call_external (SOME (MAP SND (call_trace es))) am tx = (INL v, am', rqs) /\
-  external_call_result_rel tops ret tx (INL v, am', rqs) (Halt ss) /\
+  call_external (SOME (MAP SND (call_trace es))) [] am tx = (INL v, am', rqs, gs) /\
+  external_call_result_rel tops ret tx (INL v, am', rqs, gs) (Halt ss) /\
   venom_frame_rel es r es' (Halt ss) ==>
   call_result_rel tops ret am tx es r es'
 Proof
@@ -89,10 +89,10 @@ Proof
 QED
 
 Theorem external_call_result_rel_frame_assertion:
-  call_external (SOME (MAP SND (call_trace es))) am tx =
-    (INR (AssertException s), am', rqs) /\
+  call_external (SOME (MAP SND (call_trace es))) [] am tx =
+    (INR (AssertException s), am', rqs, gs) /\
   external_call_result_rel tops ret tx
-    (INR (AssertException s), am', rqs) (Abort a ss) /\
+    (INR (AssertException s), am', rqs, gs) (Abort a ss) /\
   venom_frame_rel es r es' (Abort a ss) ==>
   call_result_rel tops ret am tx es r es'
 Proof
@@ -102,8 +102,8 @@ Proof
 QED
 
 Theorem external_call_result_rel_frame_runtime:
-  call_external (SOME (MAP SND (call_trace es))) am tx =
-    (INR (Error (RuntimeError m)), am', rqs) /\
+  call_external (SOME (MAP SND (call_trace es))) [] am tx =
+    (INR (Error (RuntimeError m)), am', rqs, gs) /\
   venom_frame_rel es r es' (Abort a ss) ==>
   call_result_rel tops ret am tx es r es'
 Proof
@@ -112,9 +112,9 @@ Proof
 QED
 
 Theorem external_call_result_rel_frame_error:
-  call_external (SOME (MAP SND (call_trace es))) am tx =
-    (INR (Error e), am', rqs) /\
-  external_call_result_rel tops ret tx (INR (Error e), am', rqs) res /\
+  call_external (SOME (MAP SND (call_trace es))) [] am tx =
+    (INR (Error e), am', rqs, gs) /\
+  external_call_result_rel tops ret tx (INR (Error e), am', rqs, gs) res /\
   venom_frame_rel es r es' res ==>
   call_result_rel tops ret am tx es r es'
 Proof
@@ -129,14 +129,14 @@ QED
  *)
 Theorem external_call_result_rel_frame:
   external_call_result_rel tops ret tx
-    (call_external (SOME (MAP SND (call_trace es))) am tx) res /\
+    (call_external (SOME (MAP SND (call_trace es))) [] am tx) res /\
   venom_frame_rel es r es' res ==>
   call_result_rel tops ret am tx es r es'
 Proof
   rpt strip_tac >>
-  Cases_on `call_external (SOME (MAP SND (call_trace es))) am tx` >>
-  rename1 `call_external _ am tx = (src, tail)` >> Cases_on `tail` >>
-  rename1 `call_external _ am tx = (src, am', rqs)` >>
+  Cases_on `call_external (SOME (MAP SND (call_trace es))) [] am tx` >>
+  rename1 `call_external _ _ am tx = (src, tail)` >> PairCases_on `tail` >>
+  rename1 `call_external _ _ am tx = (src, am', rqs, gs)` >>
   Cases_on `src`
   >- (Cases_on `res` >>
       FIRST [drule_all external_call_result_rel_frame_success >> simp[],

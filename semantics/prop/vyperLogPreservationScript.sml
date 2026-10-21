@@ -1080,33 +1080,25 @@ Theorem case_expr_builtin_logs[local]:
     log_extends st st'
 Proof
   rpt strip_tac >>
-  qpat_x_assum `eval_expr _ _ _ = _` mp_tac >>
-  simp[Once vyperInterpreterTheory.evaluate_def] >>
-  pure_rewrite_tac[vyperStateTheory.ignore_bind_def] >>
-  simp[vyperStateTheory.bind_def, vyperStateTheory.return_def,
-       vyperStateTheory.raise_def, vyperStateTheory.check_def,
-       vyperStateTheory.type_check_def, vyperStateTheory.assert_def,
-       vyperStateTheory.get_accounts_def, vyperStateTheory.lift_sum_def,
-       AllCaseEqs()] >>
-  rpt strip_tac >> gvs[log_extends_refl] >>
+  Cases_on `builtin_args_length_ok bt (LENGTH es)`
+  >- gvs[Once vyperInterpreterTheory.evaluate_def,
+         vyperStateTheory.type_check_def, vyperStateTheory.assert_def,
+         vyperStateTheory.raise_def, vyperStateTheory.ignore_bind_def,
+         vyperStateTheory.bind_def, log_extends_refl] >>
   Cases_on `bt = Len` >> gvs[] >>
-  TRY (gvs[vyperStateTheory.bind_def, vyperStateTheory.return_def,
-           vyperStateTheory.raise_def, AllCaseEqs()] >>
-       imp_res_tac toplevel_array_length_state >> gvs[] >>
-       first_x_assum (qspec_then `st` mp_tac) >>
-       simp[vyperStateTheory.check_def, vyperStateTheory.type_check_def,
-            vyperStateTheory.assert_def, vyperStateTheory.return_def] >> NO_TAC)
-  >> `!st res st'. eval_exprs cx es st = (res,st') ==>
-        log_extends st st'` by
-       (first_x_assum (qspec_then `st` mp_tac) >>
-        simp[vyperStateTheory.check_def, vyperStateTheory.type_check_def,
-             vyperStateTheory.assert_def, vyperStateTheory.return_def])
-  >> gvs[vyperStateTheory.bind_def, vyperStateTheory.return_def,
-         vyperStateTheory.raise_def, vyperStateTheory.get_accounts_def,
-         AllCaseEqs()]
-  >> BasicProvers.FULL_CASE_TAC
-  >> gvs[vyperStateTheory.return_def, vyperStateTheory.raise_def]
-  >> first_x_assum drule >> simp[]
+  qpat_x_assum `!s0 x s1. _`
+    (qspecl_then [`st`, `()`, `st`] mp_tac) >>
+  simp[vyperStateTheory.type_check_def, vyperStateTheory.assert_def,
+       vyperStateTheory.return_def] >> strip_tac >>
+  qpat_x_assum `eval_expr _ _ _ = _` mp_tac >>
+  simp[Once vyperInterpreterTheory.evaluate_def,
+       vyperStateTheory.type_check_def, vyperStateTheory.assert_def,
+       vyperStateTheory.return_def, vyperStateTheory.bind_def,
+       vyperStateTheory.ignore_bind_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[] >>
+  imp_res_tac toplevel_array_length_state >>
+  imp_res_tac vyperStateTheory.eval_builtin_preserves_fields >> gvs[] >>
+  first_x_assum drule >> simp[log_extends_def]
 QED
 
 Theorem case_stmt_return_some_logs[local]:
@@ -3767,15 +3759,18 @@ Proof
   metis_tac[log_extends_eq_logs, log_extends_trans]
 QED
 Theorem call_external_function_success_log_extends:
-  call_external_function orc am cx nr mut ts all_mods args dflts vals body ret =
-    (INL v,am',rqs) ==>
+  call_external_function orc gs am cx nr mut ts all_mods args dflts vals body ret =
+    (INL v,am',rqs,gs') ==>
   machine_log_extends am am'
 Proof
   rpt strip_tac >>
-  qpat_x_assum `call_external_function _ _ _ _ _ _ _ _ _ _ _ _ = _` mp_tac >>
+  qpat_x_assum `call_external_function _ _ _ _ _ _ _ _ _ _ _ _ _ = _` mp_tac >>
   simp[Once vyperInterpreterTheory.call_external_function_def,
        AllCaseEqs()] >>
   rpt strip_tac >>
+  qmatch_asmsub_rename_tac
+    `initial_state am_c [env] with
+       <|outcomes := orc; requests := []; gas_observations := body_gs|>` >>
   Cases_on `(do
                if nr then
                  case cx.nonreentrant_slot of
@@ -3786,7 +3781,8 @@ Proof
                else return ();
                send_call_value mut cx;
                eval_stmts cx body
-             od) (initial_state am_c [env] with <|outcomes := orc; requests := []|>)` >>
+             od) (initial_state am_c [env] with
+               <|outcomes := orc; requests := []; gas_observations := body_gs|>)` >>
   Cases_on `q` >> gvs[AllCaseEqs()] >>
   Cases_on `(if nr /\ mut <> View /\ mut <> Pure then
                case cx.nonreentrant_slot of
@@ -3809,10 +3805,10 @@ Proof
 QED
 
 Theorem call_external_success_log_extends:
-  call_external orc am tx = (INL v,am',rqs) ==> machine_log_extends am am'
+  call_external orc gs am tx = (INL v,am',rqs,gs') ==> machine_log_extends am am'
 Proof
   rpt strip_tac >>
-  qpat_x_assum `call_external _ _ _ = _` mp_tac >>
+  qpat_x_assum `call_external _ _ _ _ = _` mp_tac >>
   simp[Once vyperInterpreterTheory.call_external_def, AllCaseEqs()] >>
   rpt strip_tac >> gvs[] >>
   imp_res_tac call_external_function_success_log_extends >>
@@ -3820,21 +3816,21 @@ Proof
 QED
 
 Theorem call_external_function_error_logs_rollback:
-  call_external_function orc am cx nr mut ts all_mods args dflts vals body ret =
-    (INR e,am',rqs) ==>
+  call_external_function orc gs am cx nr mut ts all_mods args dflts vals body ret =
+    (INR e,am',rqs,gs') ==>
   am'.logs = am.logs
 Proof
   strip_tac >> imp_res_tac call_external_function_error_rollback >> gvs[]
 QED
 
 Theorem call_external_error_logs_rollback:
-  call_external orc am tx = (INR e,am',rqs) ==> am'.logs = am.logs
+  call_external orc gs am tx = (INR e,am',rqs,gs') ==> am'.logs = am.logs
 Proof
   strip_tac >> imp_res_tac call_external_error_rollback >> gvs[]
 QED
 
 Theorem call_external_log_extends:
-  call_external orc am tx = (res,am',rqs) ==> machine_log_extends am am'
+  call_external orc gs am tx = (res,am',rqs,gs') ==> machine_log_extends am am'
 Proof
   Cases_on `res` >> strip_tac >-
     (imp_res_tac call_external_success_log_extends) >>
@@ -3843,15 +3839,15 @@ Proof
 QED
 
 Theorem call_external_transaction_log_extends_empty:
-  call_external_transaction orc am tx = (res,am',rqs) ==>
+  call_external_transaction orc gs am tx = (res,am',rqs,gs') ==>
   isPREFIX [] am'.logs
 Proof
   simp[]
 QED
 
 Theorem call_external_transaction_success_fresh:
-  call_external_transaction orc am tx = (INL v,am',rqs) ==>
-  call_external orc (clear_machine_logs am) tx = (INL v,am',rqs) /\
+  call_external_transaction orc gs am tx = (INL v,am',rqs,gs') ==>
+  call_external orc gs (clear_machine_logs am) tx = (INL v,am',rqs,gs') /\
   machine_log_extends (clear_machine_logs am) am'
 Proof
   simp[vyperInterpreterTheory.call_external_transaction_def] >>

@@ -111,8 +111,9 @@ End
  * code, all other accounts exactly, plus transient storage and ordered logs.
  *)
 Definition deploy_result_rel_def:
-  deploy_result_rel tops runtime_bc tx es r es' src <=>
-    case src of
+  deploy_result_rel tops runtime_bc tx es r es'
+    (src : ((abstract_machine # call_request list) + exception) # num list) <=>
+    case FST src of
       INL (am', rqs) =>
         ?lgs.
           frame_outcome es r es' NONE runtime_bc lgs /\

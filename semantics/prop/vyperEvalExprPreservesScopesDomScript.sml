@@ -261,14 +261,17 @@ Proof
   imp_res_tac get_Value_scopes >> imp_res_tac lift_sum_scopes >> imp_res_tac lift_sum_runtime_scopes >> gvs[]
 QED
 
-(* Pure builtin tails need only the state projection, not their result cases. *)
+(* Builtin tails retain the scopes projection even when gas is observed. *)
 Theorem builtin_dom_frames[local]:
   state_rel_frame (λs t. MAP FDOM s.scopes = MAP FDOM t.scopes) (lift_sum rs) ∧
   state_rel_frame (λs t. MAP FDOM s.scopes = MAP FDOM t.scopes)
-    (toplevel_array_length cx tv)
+    (toplevel_array_length cx tv) ∧
+  state_rel_frame (λs t. MAP FDOM s.scopes = MAP FDOM t.scopes)
+    (eval_builtin cx ty bt vs)
 Proof
   simp[state_rel_frame_result] >> rpt strip_tac >>
-  FIRST [drule lift_sum_state, drule toplevel_array_length_state] >> simp[]
+  FIRST [drule lift_sum_state, drule toplevel_array_length_state,
+         drule eval_builtin_preserves_fields] >> simp[]
 QED
 
 local

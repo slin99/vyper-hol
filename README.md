@@ -50,7 +50,7 @@ The semantics is organised into layers:
 - **Storage** — encoding and decoding of Vyper values to/from EVM storage slots, and hashmap slot computation using Keccak256.
 - **ABI** — conversions between Vyper types and the standard [Contract ABI](https://docs.soliditylang.org/en/latest/abi-spec.html) encoding, used for encoding/decoding call data and return values. This defers to the ABI encoder/decoder in Verifereum for conversions to/from raw bytes.
 - **Evaluation context** — the non-stateful environment for the interpreter, containing the transaction information, source code of existing contracts, and semantics for builtins that depend on this context (e.g., `msg.sender`, `block.number`, `ecrecover`).
-- **Interpreter state** — the stateful machinery for the interpreter, including a state-exception monad, the mutable state (EVM accounts, variable scopes, immutables, logs, transient storage), and operations for reading/writing storage, variables, and globals. Assignment to nested targets (e.g., `x[3].n = 9`) is also handled at this level.
+- **Interpreter state** — the stateful machinery for the interpreter, including a state-exception monad, mutable EVM accounts, variable scopes, immutables, logs, transient storage, and frame-local gas observations. Assignment to nested targets (e.g., `x[3].n = 9`) is also handled at this level.
 - **Interpreter** — the main definitional interpreter (`evaluate_def`), function lookup and calling conventions, the termination proof, and the top-level entry-points.
 - **Type checking** — partial type-checking definitions (`vyperTypeCheck`), including `satisfies_type`, `well_typed_expr`, and related predicates.
 
@@ -58,7 +58,11 @@ The logical contract type checker can be evaluated on closed direct inputs, comp
 
 The interpreter is written in a state-exception monad. Exceptions are used for semantic errors (e.g., looking up a variable that was not bound), legitimate runtime exceptions (e.g., failed assertions), and control flow for internal function calls and loops (`return`, `break`, `continue`).
 
-Termination is proved for the interpreter, validating Vyper's design as a total language (this does not rely on gas consumption, which is invisible at the Vyper source level). The termination argument uses the facts that internal function calls cannot recurse (even indirectly) and that all loops have an explicit (syntactic) bound.
+`msg.gas` and its `msg.mana` alias consume the next value from the frame-local `evaluation_state.gas_observations` list. Values must fit `uint256`; missing or out-of-range evidence raises a runtime error rather than returning a fabricated gas value. The list is evaluation evidence, not persistent account state or a source-level gas-cost model. Internal calls and default expressions share the current frame's list; external callees execute through Verifereum, independently of these source observations.
+
+`call_external orc gs am tx` takes the optional callee-outcome oracle `orc` and gas observations `gs`, returning `(result, machine, requests, remaining_gas_observations)`. `load_contract orc gs am tx mods exps` returns `(deployment_result, remaining_gas_observations)`. Evidence remains consumed when machine effects roll back. Gas-free callers pass `[]`; the two-argument `initial_state am scopes` also starts with empty evidence.
+
+Termination is proved for the interpreter, validating Vyper's design as a total language. The argument does not rely on source-level gas consumption: internal function calls cannot recurse (even indirectly), and all loops have an explicit syntactic bound. Observing `msg.gas` does not introduce a gas-cost model.
 
 External calls (`staticcall` and `extcall`) are implemented by deferring to the low-level EVM execution defined in Verifereum. This makes termination straightforward since the interpreter is not recursive for external calls; termination depends on gas consumption (and this being sufficient has already been proven in Verifereum). The interpreter also supports module imports, with internal function calls across modules tracked via `source_id`, and `@deploy` functions callable during contract deployment.
 
@@ -74,9 +78,11 @@ The test infrastructure defines functions for re-running execution traces from t
 
 The decoding of JSON into our AST type is somewhat ad-hoc, in part because the JSON format is not fully specified. In future work, we might formalise more of the front-end or elaboration process, including parsing and type-checking, so that we can run source code directly. For now, we rely on an external front-end (e.g., as used in Vyper's test export process) and decode its output to construct terms in our formal syntax.
 
+For source gas observations, the runner executes the concrete transaction on the original pre-transaction accounts and extracts successful post-`GAS` values at compiler-mapped source sites in the selected frame. It does not commit those concrete execution effects before source replay. The pinned compiler's fresh annotated AST and source maps identify source reads separately from compiler-generated forwarding `GAS` instructions; enrichment verifies runtime bytecode and constructor initcode plus recorded arguments. Transaction entry follows the pinned exporter's Prague rules, including intrinsic gas, rather than the later protocol transaction-gas cap. Replay rejects evidence-production failure, exhausted or invalid evidence, and leftover observations even when the exported test expects a revert.
+
 ## Current Limitations
 
-The formal semantics covers the core Vyper language including external calls (`staticcall`, `extcall`), reentrancy protection (`@nonreentrant`), `raw_call`, contract creation builtins, transient storage, and module imports. The main limitation is the **front-end**: there is no formal parser (we operate on abstract syntax exported as JSON, [#46](https://github.com/verifereum/vyper-hol/issues/46)) and type-checking is partial ([#47](https://github.com/verifereum/vyper-hol/issues/47)). A small number of minor features remain unimplemented, including `print` and gas modelling for `msg.gas`/`msg.mana` and external call gas limits ([#98](https://github.com/verifereum/vyper-hol/issues/98)).
+The formal semantics covers the core Vyper language including external calls (`staticcall`, `extcall`), reentrancy protection (`@nonreentrant`), `raw_call`, contract creation builtins, transient storage, module imports, and evidence-backed `msg.gas`/`msg.mana` observations. The main limitation is the **front-end**: there is no formal parser (we operate on abstract syntax exported as JSON, [#46](https://github.com/verifereum/vyper-hol/issues/46)), and type-checking is partial ([#47](https://github.com/verifereum/vyper-hol/issues/47)). Remaining features include `print`, explicit external-call `gas=` forwarding, and gas-dependent out-of-gas behavior ([#98](https://github.com/verifereum/vyper-hol/issues/98)). Source observations do not establish general gas-sensitive compiler correctness; the compiler theorem's supported subset still excludes `MsgGas`.
 
 ## Outcomes and Next Steps
 
@@ -118,6 +124,8 @@ git fetch --unshallow --tags
 git checkout --detach "$(tr -d '[:space:]' < ../VYPER_PIN)"
 pip install . --group test
 pytest -s -n0 --export ../tests/vyper-test-exports -m "not fuzzing" tests/functional
+cd ..
+python tools/enrich_gas_metadata.py --vyper-source vyper-src tests/vyper-test-exports
 ```
 
 The checkout command reads the repository's authoritative `VYPER_PIN`; keep it
@@ -128,6 +136,14 @@ Then run individual generated test theories with `holbuild`, for example:
 
 ```bash
 holbuild -j"$(nproc)" build vyperTest_functional_builtins_codegen_test_abi_decodeTheory
+```
+
+The gas-observation boundary checks and pinned gas/mana replays are:
+
+```bash
+holbuild build vyperGasReplayTestTheory \
+  vyperTest_functional_codegen_features_test_gasTheory \
+  vyperTest_functional_codegen_features_test_manaTheory
 ```
 
 The CI workflow runs the generated tests in parallel groups; see `.github/workflows/holbuild.yml` for that full setup.

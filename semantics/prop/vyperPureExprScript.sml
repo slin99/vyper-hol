@@ -12,7 +12,7 @@ Definition pure_expr_def:
   pure_expr (StructLit _ _ kes) = EVERY pure_expr (MAP SND kes) ∧
   pure_expr (Subscript _ e1 e2) = (pure_expr e1 ∧ pure_expr e2) ∧
   pure_expr (Attribute _ e _) = pure_expr e ∧
-  pure_expr (Builtin _ _ es) = EVERY pure_expr es ∧
+  pure_expr (Builtin _ bt es) = (bt <> Env MsgGas /\ EVERY pure_expr es) ∧
   pure_expr (TypeBuiltin _ _ _ es) = EVERY pure_expr es ∧
   pure_expr _ = F
 Termination
@@ -174,32 +174,35 @@ Theorem case_Builtin[local]:
        eval_expr cx (Builtin ty bt es) st = (res, st') ⇒
        pure_expr (Builtin ty bt es) ⇒ st = st')
 Proof
-  rpt strip_tac >>
-  gvs[evaluate_def] >>
-  gvs[pure_expr_def] >>
-  gvs[bind_def, ignore_bind_def] >>
-  gvs[check_def, type_check_def, assert_def] >>
-  gvs[return_def, raise_def] >>
-  gvs[get_accounts_def, lift_sum_def] >>
-  gvs[AllCaseEqs()] >>
-  Cases_on `bt = Len` >> gvs[bind_def, AllCaseEqs(), return_def, raise_def]
-  (* Len case: eval_expr (HD es) + toplevel_array_length *)
-  (* Len case *)
-  >- (gvs[toplevel_array_length_def, bind_def, AllCaseEqs(),
-          return_def, raise_def, get_accounts_def] >>
-      imp_res_tac get_storage_backend_state >> gvs[] >>
-      imp_res_tac check_array_bounds_state >> gvs[] >>
-      imp_res_tac materialise_state >> gvs[] >>
-      imp_res_tac toplevel_array_length_state >>
+  rpt gen_tac >> strip_tac >> rpt gen_tac >> rpt strip_tac >>
+  fs[pure_expr_def] >>
+  qpat_x_assum `eval_expr cx (Builtin ty bt es) st = (res,st')` mp_tac >>
+  simp[Once evaluate_def, bind_def, ignore_bind_def,
+       type_check_def, assert_def, return_def, raise_def] >>
+  Cases_on `builtin_args_length_ok bt (LENGTH es)` >> simp[raise_def] >>
+  Cases_on `bt = Len` >> simp[]
+  >- (Cases_on `eval_expr cx (HD es) st` >>
+      rename1 `eval_expr cx (HD es) st = (arg_res,arg_st)` >>
       `pure_expr (HD es)` by
-        (Cases_on `es` >> fs[builtin_args_length_ok_def]) >>
-      first_x_assum drule >> gvs[])
-  (* non-Len case: eval_exprs + evaluate_builtin *)
-  >> TRY (Cases_on `evaluate_builtin cx s''.accounts ty bt vs` >> gvs[return_def, raise_def]) >>
-  first_x_assum drule >> gvs[ETA_THM, sum_CASE_rator, CaseEq"sum",
-    return_def, raise_def, get_accounts_def, builtin_args_length_ok_def,
-    listTheory.LENGTH_EQ_NUM_compute] >>
-  imp_res_tac toplevel_array_length_state >> gvs[]
+        (Cases_on `es` >> gvs[builtin_args_length_ok_def]) >>
+      `st = arg_st` by
+        (qpat_x_assum `!s'' t. _ /\ bt = Len ==> _`
+           (qspecl_then [`st`,`st`] mp_tac) >>
+         simp[type_check_def, assert_def] >> metis_tac[]) >>
+      Cases_on `arg_res` >>
+      gvs[bind_def, return_def, AllCaseEqs()] >>
+      rpt strip_tac >>
+      imp_res_tac toplevel_array_length_state >> gvs[]) >>
+  Cases_on `eval_exprs cx es st` >>
+  rename1 `eval_exprs cx es st = (args_res,args_st)` >>
+  `st = args_st` by
+    (qpat_x_assum `!s'' t. _ /\ bt <> Len ==> _`
+       (qspecl_then [`st`,`st`] mp_tac) >>
+     simp[type_check_def, assert_def] >> metis_tac[]) >>
+  Cases_on `args_res` >>
+  gvs[bind_def, eval_builtin_def, lift_sum_def, return_def, raise_def, AllCaseEqs()] >>
+  rpt strip_tac >>
+  gvs[sum_CASE_rator, AllCaseEqs(), return_def, raise_def]
 QED
 
 Theorem case_Pop[local]:

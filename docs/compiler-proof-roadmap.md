@@ -134,11 +134,12 @@ it from a general well-formed frame run is still a 2.1 obligation.
 | `call_outcome` | `co_success`, `co_returnData`, **post-call accounts including balance/code/storage** `co_accounts`, `co_tStorage`, `co_logs` |
 
 One [source evaluator](../semantics/vyperInterpreterScript.sml) has two modes:
-`call_external NONE` concretely runs callees; `call_external (SOME os)` takes
-outcomes. Arbitrary SOME lists use this same evaluator, not a theorem-only
+`call_external NONE gs` concretely runs callees; `call_external (SOME os) gs`
+takes outcomes. The independent `gs` list supplies source `msg.gas`/`msg.mana`
+observations. Arbitrary SOME lists use this same evaluator, not a theorem-only
 interpreter. The unchanged two-argument `initial_state am scs` starts in NONE
-with empty requests. Runtime theorem mode is exactly
-`call_external (SOME (MAP SND (call_trace es))) am tx`.
+with empty requests and gas observations. Runtime theorem mode is exactly
+`call_external (SOME (MAP SND (call_trace es))) [] am tx`.
 Venom and [assembly](../venom/codegen/defs/asmSemScript.sml) CALL/STATICCALL also
 use `take_outcome`, `record_request`, `adopt_outcome`: ordinary exhaustion is a
 failed call; failed/static calls adopt no accounts/transient/log effects;
@@ -178,10 +179,13 @@ input in the full trace; invalid EC input is not starvation.
 **Gas and observations:** entry `cc_gas = 0`; Venom GAS remains unchanged.
 `unitShapeDefs.opaque_use_ok` permits GAS copies/PHIs only into CALL/STATICCALL
 gas positions. Oracle calls evaluate but ignore that operand's value; assembly
-GAS consumes actual EVM readings (zero on exhaustion). No equality of Venom
-GAS with EVM readings, `msg.gas`/`gas=` guarantee or sufficient-gas existential
-is claimed. The conclusion is actual `run_call` and frame OutOfGas /
-StackOverflow, valid computed-precompile failure, or `call_result_rel`.
+GAS consumes actual EVM readings (zero on exhaustion). Concrete source replay
+can now consume separately extracted frame-local `msg.gas`/`msg.mana` readings;
+the compiler boundary still supplies `[]` and excludes `MsgGas`. No equality of
+Venom GAS with EVM readings, source-gas provenance theorem, `msg.gas`/`gas=`
+guarantee or sufficient-gas existential is claimed here. The conclusion is
+actual `run_call` and frame OutOfGas / StackOverflow, valid computed-precompile
+failure, or `call_result_rel`.
 
 On success the result relates canonical wrapped return bytes, accounts,
 transient storage, ordered concrete logs and the **entire request sequence**.

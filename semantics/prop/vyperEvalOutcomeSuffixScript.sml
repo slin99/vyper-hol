@@ -104,6 +104,14 @@ Proof
     drule_all lift_sum_runtime_state] >> simp[]
 QED
 
+Theorem outcomes_frame_builtin[simp]:
+  outcomes_frame (eval_builtin cx ty bt vs)
+Proof
+  simp[outcomes_frame_def] >> gen_tac >>
+  Cases_on `eval_builtin cx ty bt vs st` >>
+  imp_res_tac eval_builtin_preserves_fields >> simp[]
+QED
+
 Theorem outcomes_frame_primitives[simp]:
   outcomes_frame (check b msg) /\ outcomes_frame (type_check b msg) /\
   outcomes_frame get_scopes /\ outcomes_frame (set_scopes scs) /\
@@ -193,7 +201,7 @@ fun OUTCOMES_FACT_TAC index (g as (_,w)) =
 
 val assign_outcomes_frame_facts =
   List.concat (List.map (CONJUNCTS o SPEC_ALL)
-    [outcomes_frame_reads, outcomes_frame_primitives,
+    [outcomes_frame_reads, outcomes_frame_builtin, outcomes_frame_primitives,
      outcomes_frame_assign_result, outcomes_frame_resolve_array,
      outcomes_frame_return, outcomes_frame_raise]);
 
@@ -272,7 +280,8 @@ val OUTCOMES_FRAME_TAC =
   rpt (fn g as (_,w) =>
     if not (same_const (rator w) ``outcomes_frame``) then NO_TAC g
     else (FIRST [CHANGED_TAC (simp_tac bool_ss
-      [FORALL_PROD, pair_case_thm, UNCURRY, outcomes_frame_assignment, outcomes_frame_reads,
+      [FORALL_PROD, pair_case_thm, UNCURRY, outcomes_frame_builtin,
+       outcomes_frame_assignment, outcomes_frame_reads,
        outcomes_frame_primitives, outcomes_frame_handlers,
        outcomes_frame_return, outcomes_frame_raise]),
     first_assum ACCEPT_TAC,
@@ -502,7 +511,7 @@ QED
 val outcomes_suffix_frame_simps =
   List.map (GEN_ALL o MATCH_MP outcomes_suffix_frame o SPEC_ALL)
     (List.concat (List.map (CONJUNCTS o SPEC_ALL)
-      [outcomes_frame_assignment, outcomes_frame_reads,
+      [outcomes_frame_assignment, outcomes_frame_reads, outcomes_frame_builtin,
        outcomes_frame_primitives, outcomes_frame_handlers,
        outcomes_frame_return, outcomes_frame_raise, outcomes_frame_create,
        outcomes_frame_check_create_blueprint,
@@ -821,4 +830,652 @@ Proof
   simp[outcomes_NONE_frame_def] >> rpt conj_tac >> rpt strip_tac >>
   imp_res_tac eval_outcomes_preserved_mutual >>
   metis_tac[PAIR, SND]
+QED
+
+(* Gas evidence is frame-local and can only be consumed, even on errors. *)
+Definition gas_frame_def:
+  gas_frame f <=> !st. (SND (f st)).gas_observations = st.gas_observations
+End
+
+Theorem gas_frame_state_preserving[local]:
+  (!st res st'. f st = (res,st') ==> st' = st) ==> gas_frame f
+Proof
+  simp[gas_frame_def] >> rpt strip_tac >> Cases_on `f st` >>
+  first_x_assum drule >> simp[]
+QED
+
+Theorem gas_frame_reads[local]:
+  gas_frame (get_Value tv) /\
+  gas_frame (materialise cx tv) /\
+  gas_frame (lookup_global cx src n) /\
+  gas_frame (lookup_flag_mem cx nsid mid) /\
+  gas_frame (read_storage_slot cx b slot ty) /\
+  gas_frame (check_array_bounds cx tv v) /\
+  gas_frame (toplevel_array_length cx tv) /\
+  gas_frame (lift_option_type x msg) /\
+  gas_frame (lift_option y msg) /\
+  gas_frame (lift_sum z) /\ gas_frame (lift_sum_runtime zr) /\
+  gas_frame (resolve_array_element cx b slot ty subs)
+Proof
+  rpt conj_tac >> irule gas_frame_state_preserving >>
+  rpt strip_tac >> FIRST [drule_all get_Value_state,
+    drule_all materialise_state, drule_all lookup_global_state,
+    drule_all lookup_flag_mem_state, drule_all read_storage_slot_state,
+    drule_all check_array_bounds_state, drule_all toplevel_array_length_state,
+    drule_all lift_option_type_state, drule_all lift_option_state,
+    drule_all lift_sum_state, drule_all lift_sum_runtime_state,
+    drule_all resolve_array_element_state] >> simp[]
+QED
+
+Theorem gas_frame_check_create_blueprint[local]:
+  gas_frame (check_create_blueprint has_salt vs)
+Proof
+  simp[gas_frame_def, check_create_blueprint_state]
+QED
+
+Theorem gas_frame_primitives[local]:
+  gas_frame (return x) /\ gas_frame (raise e) /\
+  gas_frame (check b msg) /\ gas_frame (type_check b msg) /\
+  gas_frame get_accounts /\ gas_frame get_transient_storage /\
+  gas_frame get_scopes /\ gas_frame (set_scopes scs) /\
+  gas_frame push_scope /\ gas_frame pop_scope /\
+  gas_frame (push_scope_with_var nm ty v) /\
+  gas_frame (new_variable id ty v) /\
+  gas_frame (update_accounts fa) /\ gas_frame (update_transient ft) /\
+  gas_frame (append_logs ls) /\ gas_frame (push_log lg) /\
+  gas_frame get_pending_deletions /\
+  gas_frame (update_pending_deletions fp) /\
+  gas_frame (get_immutables cx src) /\
+  gas_frame (set_immutable cx src nm ty v) /\
+  gas_frame (get_storage_backend cx transient) /\
+  gas_frame (write_storage_slot cx transient slot ty v) /\
+  gas_frame (set_global cx src nm v) /\
+  gas_frame (transfer_value sender target amount) /\
+  gas_frame (acquire_nonreentrant_lock target lock view) /\
+  gas_frame (release_nonreentrant_lock target lock) /\
+  gas_frame (push_function fn sc cx) /\ gas_frame (pop_function scs)
+Proof
+  simp[gas_frame_def, check_def, type_check_def, assert_def,
+    get_scopes_def, set_scopes_def, push_scope_def, pop_scope_def,
+    push_scope_with_var_def, new_variable_def, update_accounts_def,
+    update_transient_def, append_logs_def, push_log_def,
+    get_pending_deletions_def, update_pending_deletions_def,
+    get_immutables_def, get_address_immutables_def,
+    set_immutable_def, set_address_immutables_def,
+    get_storage_backend_def, set_storage_backend_def, write_storage_slot_def,
+    set_global_def, transfer_value_def, get_accounts_def,
+    acquire_nonreentrant_lock_def, release_nonreentrant_lock_def,
+    get_transient_storage_def, push_function_def, pop_function_def,
+    bind_def, ignore_bind_def, return_def, raise_def, AllCaseEqs()] >>
+  rpt strip_tac >>
+  rpt (BasicProvers.PURE_CASE_TAC >> asm_simp_tac (srw_ss()) [] >>
+    gvs[set_scopes_def, update_accounts_def, update_transient_def,
+        set_address_immutables_def, get_storage_backend_def,
+        set_storage_backend_def, write_storage_slot_def,
+        lift_option_type_def, lift_option_def, lift_sum_def,
+        get_accounts_def, get_transient_storage_def, check_def,
+        type_check_def, assert_def,
+        bind_def, ignore_bind_def, return_def, raise_def, AllCaseEqs()]) >>
+  gvs[get_storage_backend_eq, set_storage_backend_eq,
+      option_CASE_rator, prod_CASE_rator, COND_RATOR,
+      return_def, raise_def, AllCaseEqs()] >>
+  rpt (BasicProvers.PURE_CASE_TAC >> asm_simp_tac (srw_ss()) [] >>
+    gvs[get_storage_backend_eq, set_storage_backend_eq, set_storage_def,
+        return_def, raise_def, AllCaseEqs()]) >>
+  qmatch_goalsub_abbrev_tac `set_storage _ _ backend _` >>
+  Cases_on `backend` >> simp[set_storage_def]
+QED
+
+Theorem gas_frame_oracle[local]:
+  gas_frame (take_call_outcome target calldata value_opt) /\
+  gas_frame (adopt_call_outcome rq co)
+Proof
+  simp[gas_frame_def, take_call_outcome_def, adopt_call_outcome_def,
+       extCallOracleTheory.adopt_outcome_def, return_def, AllCaseEqs()] >>
+  rpt strip_tac >> rpt CASE_TAC >> gvs[]
+QED
+
+Theorem gas_frame_handlers[local]:
+  gas_frame (handle_loop_exception e) /\ gas_frame (handle_function e)
+Proof
+  Cases_on `e` >>
+  simp[handle_loop_exception_def, handle_function_def,
+       gas_frame_def, return_def, raise_def]
+QED
+
+Theorem gas_frame_bind[local]:
+  gas_frame f /\ (!v. gas_frame (g v)) ==>
+  gas_frame (monad_bind f g)
+Proof
+  simp[gas_frame_def, bind_def, FORALL_PROD] >>
+  rpt strip_tac >> Cases_on `f st` >> Cases_on `q` >> gvs[] >>
+  qpat_x_assum `!st. _` (qspec_then `st` mp_tac) >> simp[] >>
+  TRY (qpat_x_assum `!v st. _` (qspecl_then [`x`,`r`] mp_tac)) >> simp[]
+QED
+
+Theorem gas_frame_ignore_bind[local]:
+  gas_frame f /\ gas_frame g ==> gas_frame (do f; g od)
+Proof
+  simp[ignore_bind_def] >> metis_tac[gas_frame_bind]
+QED
+
+Theorem gas_frame_cond[local]:
+  gas_frame f /\ gas_frame g ==> gas_frame (if b then f else g)
+Proof
+  Cases_on `b` >> simp[]
+QED
+
+Theorem gas_frame_assign_result[local]:
+  gas_frame (assign_result tv op v subs)
+Proof
+  Cases_on `op` >> simp[assign_result_def, gas_frame_reads, gas_frame_primitives]
+QED
+
+val gas_frame_facts = List.concat (List.map (CONJUNCTS o SPEC_ALL)
+  [gas_frame_reads, gas_frame_primitives, gas_frame_oracle,
+   gas_frame_handlers, gas_frame_assign_result, gas_frame_check_create_blueprint]);
+
+val gas_frame_net = outcomes_frame_net gas_frame_facts
+  [gas_frame_bind, gas_frame_ignore_bind];
+
+val GAS_FRAME_STEP = FIRST [
+  gen_tac, first_assum ACCEPT_TAC,
+  (fn g as (_,w) => FIRST (Net.match w gas_frame_net) g),
+  CONV_TAC (RAND_CONV (CHANGED_CONV outcomes_head_conv)),
+  CONV_TAC (HO_REWR_CONV FORALL_PROD),
+  OUTCOMES_CASE_TAC];
+
+Theorem gas_frame_assignment[local]:
+  (!cx tgt op. gas_frame (assign_target cx tgt op)) /\
+  (!cx tgts vs. gas_frame (assign_targets cx tgts vs))
+Proof
+  ho_match_mp_tac assign_target_ind >> rpt conj_tac >> rpt gen_tac >>
+  simp_tac bool_ss [Once assign_target_def, FORALL_PROD, LET_THM] >>
+  rpt strip_tac >> rpt GAS_FRAME_STEP
+QED
+
+Theorem gas_frame_create[local]:
+  gas_frame (eval_create cx kind has_salt rof arg_tys vs blueprint_size) /\
+  gas_frame (eval_raw_call cx flags target_addr calldata amount)
+Proof
+  conj_tac >>
+  simp_tac bool_ss [eval_create_def, create_soft_failure_def,
+                   eval_raw_call_def, LET_THM] >>
+  rpt (FIRST [MATCH_MP_TAC gas_frame_cond >> conj_tac, GAS_FRAME_STEP])
+QED
+
+Definition gas_observations_suffix_def:
+  gas_observations_suffix before after <=> ?prefix. before = prefix ++ after
+End
+
+Theorem gas_observations_suffix_refl[simp]:
+  gas_observations_suffix gs gs
+Proof
+  simp[gas_observations_suffix_def] >> qexists_tac `[]` >> simp[]
+QED
+
+Theorem gas_observations_suffix_trans:
+  gas_observations_suffix before mid /\ gas_observations_suffix mid after ==>
+  gas_observations_suffix before after
+Proof
+  simp[gas_observations_suffix_def] >> rpt strip_tac >> gvs[] >>
+  qmatch_goalsub_rename_tac `p ++ (q ++ xs)` >>
+  qexists_tac `p ++ q` >> simp[APPEND_ASSOC]
+QED
+
+Definition gas_suffix_def:
+  gas_suffix f <=>
+    !st. gas_observations_suffix st.gas_observations (SND (f st)).gas_observations
+End
+
+Theorem gas_suffix_result:
+  gas_suffix f /\ f st = (res,st') ==>
+  gas_observations_suffix st.gas_observations st'.gas_observations
+Proof
+  simp[gas_suffix_def] >> strip_tac >>
+  first_x_assum (qspec_then `st` mp_tac) >> simp[]
+QED
+
+Theorem gas_suffix_frame[local]:
+  gas_frame f ==> gas_suffix f
+Proof
+  simp[gas_frame_def, gas_suffix_def]
+QED
+
+Theorem gas_suffix_read[local]:
+  gas_suffix (λst. return (g st) st)
+Proof
+  simp[gas_suffix_def, return_def]
+QED
+
+Theorem gas_suffix_builtin:
+  gas_suffix (eval_builtin cx ty bt vs)
+Proof
+  simp[gas_suffix_def] >> gen_tac >>
+  Cases_on `bt = Env MsgGas /\ vs = []` >>
+  gvs[eval_builtin_def]
+  >- (Cases_on `observe_msg_gas st` >>
+      imp_res_tac observe_msg_gas_consumes >>
+      Cases_on `st.gas_observations` >>
+      gvs[gas_observations_suffix_def] >> qexists_tac `[h]` >> simp[]) >>
+  Cases_on `evaluate_builtin cx st.accounts ty bt vs` >>
+  simp[lift_sum_def, return_def, raise_def]
+QED
+
+Theorem gas_suffix_bind_guarded[local]:
+  gas_suffix f /\
+  (!s v t. f s = (INL v,t) ==> gas_suffix (g v)) ==>
+  gas_suffix (monad_bind f g)
+Proof
+  simp[gas_suffix_def, bind_def] >> rpt strip_tac >>
+  Cases_on `f st` >> Cases_on `q` >> gvs[] >>
+  `gas_observations_suffix st.gas_observations r.gas_observations` by
+    (qpat_x_assum `!st. gas_observations_suffix _ (SND (f st)).gas_observations`
+       (qspec_then `st` mp_tac) >> simp[]) >>
+  TRY (qpat_x_assum `!s v t. _` (qspecl_then [`st`,`x`,`r`] mp_tac) >>
+    simp[] >> disch_then (qspec_then `r` mp_tac) >>
+    strip_tac >> drule_all gas_observations_suffix_trans >> simp[])
+QED
+
+Theorem gas_suffix_try[local]:
+  gas_suffix f /\ (!e. gas_suffix (h e)) ==> gas_suffix (try f h)
+Proof
+  simp[gas_suffix_def, try_def] >> rpt strip_tac >>
+  Cases_on `f st` >> Cases_on `q` >> gvs[] >>
+  qpat_x_assum `!st. gas_observations_suffix _ (SND (f st)).gas_observations`
+    (qspec_then `st` mp_tac) >> simp[] >> strip_tac >>
+  TRY (qpat_x_assum `!e st. _` (qspecl_then [`y`,`r`] mp_tac) >>
+    strip_tac >> drule_all gas_observations_suffix_trans >> simp[])
+QED
+
+Theorem gas_suffix_finally[local]:
+  gas_suffix f /\ gas_suffix g ==> gas_suffix (finally f g)
+Proof
+  simp[gas_suffix_def, finally_def] >> rpt strip_tac >>
+  Cases_on `f st` >> Cases_on `g r` >> Cases_on `q'` >> gvs[] >>
+  qpat_x_assum `!st. gas_observations_suffix _ (SND (f st)).gas_observations`
+    (qspec_then `st` mp_tac) >> simp[] >> strip_tac >>
+  qpat_x_assum `!st. gas_observations_suffix _ (SND (g st)).gas_observations`
+    (qspec_then `r` mp_tac) >> simp[] >> strip_tac >>
+  Cases_on `q` >> simp[ignore_bind_def, bind_def, return_def, raise_def] >>
+  drule_all gas_observations_suffix_trans >> simp[]
+QED
+
+val gas_suffix_frame_simps =
+  List.map (GEN_ALL o MATCH_MP gas_suffix_frame o SPEC_ALL)
+    (gas_frame_facts @ List.concat (List.map (CONJUNCTS o SPEC_ALL)
+      [gas_frame_assignment, gas_frame_create]));
+
+val gas_suffix_net = outcomes_frame_net
+  (gas_suffix_read :: gas_suffix_builtin :: gas_suffix_frame_simps)
+  [gas_suffix_bind_guarded, gas_suffix_finally, gas_suffix_try];
+
+val GAS_SUFFIX_TAC = rpt (FIRST [
+  CONV_TAC (HO_REWR_CONV FORALL_PROD), gen_tac,
+  first_assum ACCEPT_TAC,
+  (fn g as (_,w) => FIRST (Net.match w gas_suffix_net) g),
+  CONV_TAC (RAND_CONV (CHANGED_CONV outcomes_head_conv)),
+  CONV_TAC (RAND_CONV (REWR_CONV ignore_bind_def)),
+  CONV_TAC (RAND_CONV (REWR_CONV switch_BoolV_def)),
+  strip_tac, conj_tac, OUTCOMES_CASE_TAC]);
+
+Theorem eval_gas_suffix_mutual:
+  (!cx s. gas_suffix (eval_stmt cx s)) /\
+  (!cx ss. gas_suffix (eval_stmts cx ss)) /\
+  (!cx it. gas_suffix (eval_iterator cx it)) /\
+  (!cx tgt. gas_suffix (eval_target cx tgt)) /\
+  (!cx tgts. gas_suffix (eval_targets cx tgts)) /\
+  (!cx bt. gas_suffix (eval_base_target cx bt)) /\
+  (!cx tyv id body vs. gas_suffix (eval_for cx tyv id body vs)) /\
+  (!cx e. gas_suffix (eval_expr cx e)) /\
+  (!cx es. gas_suffix (eval_exprs cx es))
+Proof
+  ho_match_mp_tac evaluate_ind >> rpt conj_tac >> rpt gen_tac >>
+  TRY strip_tac >> OUTCOMES_SUSPEND_CASE
+QED
+
+Resume eval_gas_suffix_mutual[eval_stmt_Pass]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Continue]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Break]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Return_NONE]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Return_SOME]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Raise_RaiseBare]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Raise_RaiseUnreachable]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Raise_RaiseReason]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Assert_AssertBare]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Assert_AssertUnreachable]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Assert_AssertReason]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Log]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_AnnAssign]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Append]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Assign]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_AugAssign]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_If]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_For]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmt_Expr]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmts_NIL]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_stmts_CONS]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_iterator_Array]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_iterator_Range]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_target_BaseTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_target_TupleTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_targets_NIL]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_targets_CONS]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_base_target_NameTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_base_target_TopLevelNameTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_base_target_AttributeTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_base_target_SubscriptTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_for_NIL]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_for_CONS]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Name]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_TopLevelName]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_FlagMember]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_IfExp]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Literal]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_StructLit]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Subscript]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Attribute]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Builtin]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Pop]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_TypeBuiltin]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_Send]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_IntCall]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_ExtCall]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_RawCallTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_RawCallCalldataTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_RawLog]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_RawRevert]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_SelfDestructTarget]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_expr_Call_CreateTarget]:
+  Cases_on `kind` >> Cases_on `has_salt` >> gvs[] >>
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_exprs_NIL]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC
+QED
+Resume eval_gas_suffix_mutual[eval_exprs_CONS]:
+  simp[Once evaluate_def] >> GAS_SUFFIX_TAC >> OUTCOMES_FINISH_TAC
+QED
+
+Finalise eval_gas_suffix_mutual
+
+Theorem eval_gas_observations_suffix_mutual:
+  (!cx s st res st'. eval_stmt cx s st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx ss st res st'. eval_stmts cx ss st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx it st res st'. eval_iterator cx it st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx tgt st res st'. eval_target cx tgt st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx tgts st res st'. eval_targets cx tgts st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx bt st res st'. eval_base_target cx bt st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx tyv id body vs st res st'. eval_for cx tyv id body vs st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx e st res st'. eval_expr cx e st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations) /\
+  (!cx es st res st'. eval_exprs cx es st = (res,st') ==>
+    gas_observations_suffix st.gas_observations st'.gas_observations)
+Proof
+  rpt conj_tac >> rpt strip_tac >>
+  first_assum (fn th =>
+    let val result = #1 (pairSyntax.dest_pair (rhs (concl th))) in
+      irule (INST_TYPE [alpha |-> type_of result] gas_suffix_result) >>
+      exists_tac (rator (lhs (concl th))) >> exists_tac result
+    end) >> simp[eval_gas_suffix_mutual]
+QED
+
+val eval_expr_gas_observations_suffix = save_thm
+  ("eval_expr_gas_observations_suffix",
+   List.nth (CONJUNCTS eval_gas_observations_suffix_mutual, 7));
+
+Theorem evaluate_defaults_gas_observations_suffix:
+  !es cx am gs res gs_rest.
+    evaluate_defaults cx am gs es = (res,gs_rest) ==>
+    gas_observations_suffix gs gs_rest
+Proof
+  Induct >> simp[evaluate_defaults_def] >>
+  rpt gen_tac >> strip_tac >>
+  gvs[evaluate_defaults_def, AllCaseEqs()] >>
+  imp_res_tac eval_expr_gas_observations_suffix >> gvs[] >>
+  metis_tac[gas_observations_suffix_trans]
+QED
+
+Theorem gas_frame_result[local]:
+  gas_frame f /\ f st = (res,st') ==>
+  st'.gas_observations = st.gas_observations
+Proof
+  simp[gas_frame_def] >> strip_tac >>
+  first_x_assum (qspec_then `st` mp_tac) >> simp[]
+QED
+
+Theorem gas_suffix_ignore_bind[local]:
+  gas_suffix f /\ gas_suffix g ==> gas_suffix (do f; g od)
+Proof
+  simp[ignore_bind_def] >> metis_tac[gas_suffix_bind_guarded]
+QED
+
+Theorem send_call_value_gas_frame[local]:
+  gas_frame (send_call_value mut cx)
+Proof
+  simp_tac bool_ss [send_call_value_def, LET_THM] >>
+  rpt (FIRST [MATCH_MP_TAC gas_frame_cond >> conj_tac, GAS_FRAME_STEP])
+QED
+
+Theorem entry_lock_gas_frame[local]:
+  gas_frame
+    (if nr then
+       case cx.nonreentrant_slot of
+         NONE => raise (Error (TypeError "nonreentrant slot missing"))
+       | SOME slot =>
+           acquire_nonreentrant_lock cx.txn.target slot (mut = View \/ mut = Pure)
+     else return ())
+Proof
+  Cases_on `nr` >> Cases_on `cx.nonreentrant_slot` >>
+  simp[gas_frame_primitives]
+QED
+
+Theorem external_unlock_gas_preserved[local]:
+  (if nr /\ mut <> View /\ mut <> Pure then
+     case cx.nonreentrant_slot of
+       NONE => return ()
+     | SOME slot => release_nonreentrant_lock cx.txn.target slot
+   else return ()) st = (res,st') ==>
+  st'.gas_observations = st.gas_observations
+Proof
+  strip_tac >> irule gas_frame_result >> goal_assum drule >>
+  Cases_on `nr` >> Cases_on `mut = View` >> Cases_on `mut = Pure` >>
+  Cases_on `cx.nonreentrant_slot` >> simp[gas_frame_primitives]
+QED
+
+Theorem call_body_pipeline_gas_suffix[local]:
+  (do lock_action; send_call_value mut cx; eval_stmts cx body od) st =
+    (res,st') ==> gas_frame lock_action ==>
+  gas_observations_suffix st.gas_observations st'.gas_observations
+Proof
+  rpt strip_tac >>
+  irule gas_suffix_result >> goal_assum drule >>
+  irule gas_suffix_ignore_bind >> conj_tac
+  >- (irule gas_suffix_frame >> simp[]) >>
+  irule gas_suffix_ignore_bind >> conj_tac
+  >- (irule gas_suffix_frame >> simp[send_call_value_gas_frame]) >>
+  simp[eval_gas_suffix_mutual]
+QED
+
+Theorem call_external_function_gas_observations_suffix:
+  call_external_function orc gs am cx nr mut ts all_mods args dflts vals body ret =
+    (res,am',rqs,gs_rest) ==>
+  gas_observations_suffix gs gs_rest
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `call_external_function _ _ _ _ _ _ _ _ _ _ _ _ _ = _` mp_tac >>
+  simp[Once call_external_function_def, AllCaseEqs()] >>
+  rpt strip_tac >>
+  imp_res_tac evaluate_defaults_gas_observations_suffix >> gvs[] >>
+  qmatch_asmsub_rename_tac
+    `initial_state am_c [env] with
+       <|outcomes := orc; requests := []; gas_observations := body_gs|>` >>
+  Cases_on `(do
+               if nr then
+                 case cx.nonreentrant_slot of
+                   NONE => raise (Error (TypeError "nonreentrant slot missing"))
+                 | SOME slot =>
+                     acquire_nonreentrant_lock cx.txn.target slot
+                       (mut = View \/ mut = Pure)
+               else return ();
+               send_call_value mut cx;
+               eval_stmts cx body
+             od) (initial_state am_c [env] with
+               <|outcomes := orc; requests := []; gas_observations := body_gs|>)` >>
+  Cases_on `q` >> gvs[AllCaseEqs()] >>
+  Cases_on `(if nr /\ mut <> View /\ mut <> Pure then
+               case cx.nonreentrant_slot of
+                 NONE => return ()
+               | SOME slot => release_nonreentrant_lock cx.txn.target slot
+             else return ()) r` >>
+  Cases_on `q` >> gvs[AllCaseEqs()] >>
+  TRY (Cases_on `y` >> gvs[AllCaseEqs()]) >>
+  TRY (Cases_on `evaluate_type (type_env_all_modules all_mods) ret` >>
+       gvs[AllCaseEqs()]) >>
+  TRY (Cases_on `safe_cast x v'` >> gvs[AllCaseEqs()]) >>
+  drule call_body_pipeline_gas_suffix >>
+  (impl_tac >- simp[entry_lock_gas_frame]) >>
+  strip_tac >> imp_res_tac external_unlock_gas_preserved >> gvs[] >>
+  metis_tac[gas_observations_suffix_trans]
+QED
+
+Theorem call_external_gas_observations_suffix:
+  call_external orc gs am tx = (res,am',rqs,gs_rest) ==>
+  gas_observations_suffix gs gs_rest
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `call_external _ _ _ _ = _` mp_tac >>
+  simp[Once call_external_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[] >>
+  imp_res_tac call_external_function_gas_observations_suffix >> gvs[]
+QED
+
+Theorem call_external_transaction_gas_observations_suffix:
+  call_external_transaction orc gs am tx = (res,am',rqs,gs_rest) ==>
+  gas_observations_suffix gs gs_rest
+Proof
+  simp[call_external_transaction_def] >>
+  metis_tac[call_external_gas_observations_suffix]
+QED
+
+Theorem load_contract_gas_observations_suffix:
+  load_contract orc gs am tx mods exps = (res,gs_rest) ==>
+  gas_observations_suffix gs gs_rest
+Proof
+  rpt strip_tac >>
+  qpat_x_assum `load_contract _ _ _ _ _ _ = _` mp_tac >>
+  simp[Once load_contract_def, AllCaseEqs()] >>
+  rpt strip_tac >> gvs[] >>
+  imp_res_tac call_external_function_gas_observations_suffix >> gvs[]
 QED

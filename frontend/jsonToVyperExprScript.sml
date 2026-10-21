@@ -636,6 +636,7 @@ Definition translate_attribute_def:
       make_flag_member (expr_current_nsid ctx, obj) attr
     else if obj = "msg" /\ attr = "sender" then Builtin (BaseT AddressT) (Env Sender) []
     else if obj = "msg" /\ attr = "value" then Builtin (BaseT (UintT 256)) (Env ValueSent) []
+    else if obj = "msg" /\ (attr = "gas" \/ attr = "mana") then Builtin (BaseT (UintT 256)) (Env MsgGas) []
     else if obj = "block" /\ attr = "timestamp" then Builtin (BaseT (UintT 256)) (Env TimeStamp) []
     else if obj = "block" /\ attr = "number" then Builtin (BaseT (UintT 256)) (Env BlockNumber) []
     else if obj = "block" /\ attr = "prevhash" then Builtin (BaseT (BytesT (Fixed 32))) (Env PrevHash) []

@@ -49,8 +49,8 @@ val () = cv_auto_trans boundary_source_requests_def;
 
 Definition boundary_source_some_success_def:
   boundary_source_some_success name data =
-    let (res,am,rqs) = call_external (SOME [send_outcome T [] 17;cpscv_tail])
-      boundary_source_machine (boundary_source_tx name) in
+    let (res,am,rqs,gs) = call_external (SOME [send_outcome T [] 17;cpscv_tail])
+      [] boundary_source_machine (boundary_source_tx name) in
       res = INL NoneV /\
       (lookup_account 11w am.accounts).balance = 17 /\
       (lookup_account 11w am.accounts).nonce = 5 /\
@@ -71,8 +71,8 @@ QED
 
 Definition boundary_source_some_failure_def:
   boundary_source_some_failure name data message os =
-    let (res,am,rqs) = call_external (SOME os)
-      boundary_source_machine (boundary_source_tx name) in
+    let (res,am,rqs,gs) = call_external (SOME os)
+      [] boundary_source_machine (boundary_source_tx name) in
       res = INR (Error (RuntimeError message)) /\
       (lookup_account 0w am.accounts).balance = 2 /\
       (lookup_account 8w am.accounts).balance = 5 /\
@@ -93,7 +93,7 @@ QED
 
 Definition boundary_source_none_def:
   boundary_source_none =
-    let (res,am,rqs) = call_external NONE boundary_source_machine (boundary_source_tx "send") in
+    let (res,am,rqs,gs) = call_external NONE [] boundary_source_machine (boundary_source_tx "send") in
       res = INL NoneV /\
       (lookup_account 0w am.accounts).balance = 2 /\
       (lookup_account 8w am.accounts).balance = 4 /\

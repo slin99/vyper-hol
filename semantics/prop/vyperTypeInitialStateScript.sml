@@ -36,6 +36,20 @@ Proof
        env_immutables_consistent_def, env_consistent_def]
 QED
 
+Theorem gas_observations_type_invariants[simp]:
+  (state_well_typed (st with gas_observations := gs) <=>
+   state_well_typed st) /\
+  (env_scopes_consistent env cx (st with gas_observations := gs) <=>
+   env_scopes_consistent env cx st) /\
+  (env_immutables_consistent env cx (st with gas_observations := gs) <=>
+   env_immutables_consistent env cx st) /\
+  (env_consistent env cx (st with gas_observations := gs) <=>
+   env_consistent env cx st)
+Proof
+  simp[state_well_typed_def, env_scopes_consistent_def,
+       env_immutables_consistent_def, env_consistent_def]
+QED
+
 (* Runtime well-typedness of an abstract machine, separated from any particular
  * function environment.  Readiness of globals/immutables is target- and
  * environment-dependent, so it is captured separately by immutables_ready below. *)
@@ -818,7 +832,7 @@ QED
 Theorem initial_state_accounts_well_typed:
   machine_well_typed am ==>
   accounts_well_typed
-    (initial_state am scs with <|outcomes := orc; requests := rqs|>).accounts
+    (initial_state am scs with <|outcomes := orc; requests := rqs; gas_observations := gs|>).accounts
 Proof
   simp[machine_well_typed_def, initial_state_def]
 QED
@@ -826,7 +840,7 @@ QED
 Theorem initial_state_single_scope_well_typed:
   machine_well_typed am /\ scope_well_typed scope ==>
   state_well_typed
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>)
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>)
 Proof
   simp[machine_well_typed_def, initial_state_def, state_well_typed_def]
 QED
@@ -998,7 +1012,7 @@ Theorem immutables_ready_env_immutables_consistent:
   env.toplevel_vtypes = env_base.toplevel_vtypes /\
   immutables_ready env_base.bare_globals env_base.toplevel_vtypes cx am.immutables ==>
   env_immutables_consistent env cx
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>)
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>)
 Proof
   rw[immutables_ready_def, env_immutables_consistent_def, initial_state_def] >> metis_tac[]
 QED
@@ -1025,7 +1039,7 @@ Theorem callable_entry_establishes_type_soundness_preconditions:
   bind_arguments (get_tenv cx) args vals = SOME scope /\
   args_values_typed (get_tenv cx) args vals ==>
   ?env_body env_after st.
-    st = (initial_state am [scope] with <|outcomes := orc; requests := rqs|>) /\
+    st = (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>) /\
     env_body.current_src = src /\
     env_body.type_defs = env_base.type_defs /\
     env_body.fn_sigs = env_base.fn_sigs /\
@@ -1075,7 +1089,7 @@ Theorem callable_entry_no_type_error:
   bind_arguments (get_tenv cx) args vals = SOME scope /\
   args_values_typed (get_tenv cx) args vals ==>
   no_type_error_eval (eval_stmts cx body
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>))
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>))
 Proof
   metis_tac[
     callable_entry_establishes_type_soundness_preconditions,

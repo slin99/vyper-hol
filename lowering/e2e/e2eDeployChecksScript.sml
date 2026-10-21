@@ -171,7 +171,7 @@ QED
 (* ===== Literal PLAN success observables, no whole-account code equality ===== *)
 
 Theorem deploy_success_observables:
-  deploy_result_rel tops runtime_bc tx es r es' (INL (am',rqs)) <=>
+  deploy_result_rel tops runtime_bc tx es r es' (INL (am',rqs),gs) <=>
   ?lgs.
     frame_outcome es r es' NONE runtime_bc lgs /\
     (lookup_account tx.target es'.rollback.accounts).code = runtime_bc /\
@@ -188,13 +188,13 @@ QED
 
 Theorem deploy_return_without_installation_rejected:
   (lookup_account tx.target es'.rollback.accounts).code <> bc ==>
-  ~deploy_result_rel tops bc tx es r es' (INL (am',rqs))
+  ~deploy_result_rel tops bc tx es r es' (INL (am',rqs),gs)
 Proof
   simp[deploy_result_rel_def]
 QED
 
 Theorem deploy_assert_case:
-  deploy_result_rel tops bc tx es r es' (INR (AssertException s)) <=>
+  deploy_result_rel tops bc tx es r es' (INR (AssertException s),gs) <=>
   ?exc out lgs. frame_outcome es r es' (SOME exc) out lgs /\
                 (exc = Reverted \/ s = "UNREACHABLE")
 Proof
@@ -202,7 +202,7 @@ Proof
 QED
 
 Theorem deploy_error_case:
-  deploy_result_rel tops bc tx es r es' (INR (Error e)) <=>
+  deploy_result_rel tops bc tx es r es' (INR (Error e),gs) <=>
   decode_strictness_exempt tops e \/
   ?exc out lgs. frame_outcome es r es' (SOME exc) out lgs
 Proof
@@ -211,17 +211,17 @@ QED
 
 Theorem deploy_failure_not_success:
   es.contexts = [(ctxt,rb)] ==>
-  ~deploy_result_rel tops bc tx es (INR NONE) es' (INR (AssertException s)) /\
-  (deploy_result_rel tops bc tx es (INR NONE) es' (INR (Error e)) <=>
+  ~deploy_result_rel tops bc tx es (INR NONE) es' (INR (AssertException s),gs) /\
+  (deploy_result_rel tops bc tx es (INR NONE) es' (INR (Error e),gs) <=>
    decode_strictness_exempt tops e)
 Proof
   simp[deploy_result_rel_def, frame_outcome_def]
 QED
 
 Theorem deploy_no_control_escape:
-  ~deploy_result_rel tops bc tx es r es' (INR BreakException) /\
-  ~deploy_result_rel tops bc tx es r es' (INR ContinueException) /\
-  ~deploy_result_rel tops bc tx es r es' (INR (ReturnException v))
+  ~deploy_result_rel tops bc tx es r es' (INR BreakException,gs) /\
+  ~deploy_result_rel tops bc tx es r es' (INR ContinueException,gs) /\
+  ~deploy_result_rel tops bc tx es r es' (INR (ReturnException v),gs)
 Proof
   simp[deploy_result_rel_def]
 QED

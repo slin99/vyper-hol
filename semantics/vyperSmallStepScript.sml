@@ -645,8 +645,7 @@ Definition apply_vals_def:
     apply_tv cx (Value $ StructV (ZIP (ks, vs))) st k ∧
   apply_vals cx vs st (BuiltinK ty bt k) =
     liftk cx ApplyTv (do
-      acc <- get_accounts;
-      v <- lift_sum $ evaluate_builtin cx acc ty bt vs;
+      v <- eval_builtin cx ty bt vs;
       return $ Value v
     od st) k ∧
   apply_vals cx vs st (TypeBuiltinK tb typ k) =
@@ -2025,9 +2024,10 @@ val evaluate_defaults_pre_def = evaluate_defaults_def
   |> cv_auto_trans_pre "evaluate_defaults_pre";
 
 Theorem evaluate_defaults_pre[cv_pre]:
-  ∀cx am v. evaluate_defaults_pre cx am v
+  ∀cx am gs v. evaluate_defaults_pre cx am gs v
 Proof
-  ntac 2 gen_tac
+  rpt gen_tac
+  \\ map_every qid_spec_tac [`gs`,`v`]
   \\ Induct \\ rw[]
   \\ rw[Once evaluate_defaults_pre_def]
   \\ gs[eval_expr_eq_cont_cps]
@@ -2049,7 +2049,7 @@ val call_external_function_pre_def = call_external_function_def
      |> cv_auto_trans_pre "call_external_function_pre";
 
 Theorem call_external_function_pre[cv_pre]:
-  call_external_function_pre orc am cx nr mut ts all_mods args dflts vals
+  call_external_function_pre orc gs am cx nr mut ts all_mods args dflts vals
     (bod:stmt list) ret
 Proof
   rw[call_external_function_pre_def]

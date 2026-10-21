@@ -72,6 +72,30 @@ QED
 
 (* ===== Environment/account items ===== *)
 
+Theorem observe_msg_gas_success_type:
+  observe_msg_gas st = (INL v,st') ==>
+  value_has_type (BaseTV (UintT 256)) v
+Proof
+  Cases_on `st.gas_observations` >>
+  rw[observe_msg_gas_def] >>
+  gvs[value_has_type_def, integerTheory.NUM_OF_INT, integerTheory.INT_POS]
+QED
+
+Theorem observe_msg_gas_error_runtime:
+  observe_msg_gas st = (INR exc,st') ==>
+  ?msg. exc = Error (RuntimeError msg)
+Proof
+  Cases_on `st.gas_observations` >>
+  rw[observe_msg_gas_def] >> gvs[]
+QED
+
+Theorem observe_msg_gas_no_type_error:
+  observe_msg_gas st <> (INR (Error (TypeError msg)),st')
+Proof
+  strip_tac >> drule observe_msg_gas_error_runtime >> simp[]
+QED
+
+
 Theorem Env_builtin_no_type_error:
   context_well_typed cx ∧ item <> MsgGas ==>
   !msg. evaluate_builtin cx acc (env_item_type item) (Env item) [] <> INR (TypeError msg)
@@ -3365,6 +3389,47 @@ Proof
   (* Arithmetic cleanup *)
   intLib.ARITH_TAC
 QED
+
+Theorem well_typed_eval_builtin_success_type:
+  well_typed_builtin_app ty bt ts /\ bt <> Len /\
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs /\
+  evaluate_type (get_tenv cx) ty = SOME tv /\
+  LIST_REL value_has_type tvs vs /\ context_well_typed cx /\
+  accounts_well_typed st.accounts /\
+  eval_builtin cx ty bt vs st = (INL v,st') ==>
+  value_has_type tv v
+Proof
+  rpt strip_tac >>
+  Cases_on `bt = Env MsgGas /\ vs = []`
+  >- (gvs[well_typed_builtin_app_def, env_item_type_def, evaluate_type_def] >>
+      drule observe_msg_gas_success_type >> simp[]) >>
+  `eval_builtin cx ty bt vs st =
+     lift_sum (evaluate_builtin cx st.accounts ty bt vs) st` by
+    (irule eval_builtin_ordinary >> gvs[]) >>
+  gvs[lift_sum_def, return_def, raise_def, AllCaseEqs()] >>
+  drule_all well_typed_builtin_app_success_type >> simp[]
+QED
+
+Theorem well_typed_eval_builtin_no_type_error:
+  well_typed_builtin_app ty bt ts /\ bt <> Len /\
+  MAP (evaluate_type (get_tenv cx)) ts = MAP SOME tvs /\
+  evaluate_type (get_tenv cx) ty = SOME tv /\
+  LIST_REL value_has_type tvs vs /\ context_well_typed cx /\
+  accounts_well_typed st.accounts ==>
+  eval_builtin cx ty bt vs st <> (INR (Error (TypeError msg)),st')
+Proof
+  rpt strip_tac >>
+  Cases_on `bt = Env MsgGas`
+  >- (`vs = []` by
+        (gvs[well_typed_builtin_app_def] >>
+         Cases_on `tvs` >> gvs[]) >>
+      gvs[] >> metis_tac[observe_msg_gas_no_type_error]) >>
+  `!item. bt = Env item ==> item <> MsgGas` by metis_tac[] >>
+  drule_all well_typed_builtin_app_no_type_error >>
+  disch_then (qspec_then `msg` assume_tac) >>
+  gvs[eval_builtin_def, lift_sum_def, return_def, raise_def, AllCaseEqs()]
+QED
+
 
 Theorem return_INL_value[local]:
   return x st = (INL y, st') ==> y = x

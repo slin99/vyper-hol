@@ -100,22 +100,22 @@ QED
 (* Assert reasons, including ordinary raise "UNREACHABLE", may REVERT;
    INVALID may correspond only to the distinguished unreachable exception. *)
 Theorem lowering_assert_boundary:
-  external_call_result_rel tops ret tx (INR (AssertException s), am, rqs)
+  external_call_result_rel tops ret tx (INR (AssertException s), am, rqs, gs)
     (Abort Revert_abort ss) /\
-  (external_call_result_rel tops ret tx (INR (AssertException s), am, rqs)
+  (external_call_result_rel tops ret tx (INR (AssertException s), am, rqs, gs)
     (Abort ExHalt_abort ss) <=> s = "UNREACHABLE")
 Proof
   simp[external_call_result_rel_def]
 QED
 
 Theorem lowering_runtime_boundary:
-  external_call_result_rel tops ret tx (INR (Error (RuntimeError msg)), am, rqs)
+  external_call_result_rel tops ret tx (INR (Error (RuntimeError msg)), am, rqs, gs)
     (Abort kind ss) /\
-  (external_call_result_rel tops ret tx (INR (Error (RuntimeError msg)), am, rqs)
+  (external_call_result_rel tops ret tx (INR (Error (RuntimeError msg)), am, rqs, gs)
     (Halt ss) <=> decode_strictness_exempt tops (RuntimeError msg)) /\
-  ~external_call_result_rel tops ret tx (INR (Error (TypeError msg)), am, rqs)
+  ~external_call_result_rel tops ret tx (INR (Error (TypeError msg)), am, rqs, gs)
     (Abort kind ss) /\
-  ~external_call_result_rel tops ret tx (INR (Error (TypeError msg)), am, rqs)
+  ~external_call_result_rel tops ret tx (INR (Error (TypeError msg)), am, rqs, gs)
     (Halt ss)
 Proof
   Cases_on `kind` >> simp[external_call_result_rel_def, decode_strictness_exempt_def]
@@ -134,13 +134,13 @@ Theorem lowering_static_decode_not_exempt:
   (!ty. occurs_abi_decode_target ty tops ==>
         ~is_dynamic (vyper_to_abi_type (type_env tops) ty)) ==>
   ~external_call_result_rel tops ret tx
-    (INR (Error (RuntimeError "abi_decode invalid")), am, rqs) (Halt ss)
+    (INR (Error (RuntimeError "abi_decode invalid")), am, rqs, gs) (Halt ss)
 Proof
   simp[external_call_result_rel_def, decode_strictness_exempt_def] >> metis_tac[]
 QED
 
 Theorem lowering_success_boundary:
-  external_call_result_rel tops ret tx (INL v, am, rqs) (Halt ss) <=>
+  external_call_result_rel tops ret tx (INL v, am, rqs, gs) (Halt ss) <=>
   return_bytes tops ret v ss.vs_returndata /\
   ss.vs_accounts = am.accounts /\ ss.vs_transient = am.tStorage /\
   logs_correspond (compiled_event_info tops) (type_env tops)
@@ -151,7 +151,7 @@ QED
 
 Theorem lowering_wrapped_return:
   needs_external_call_wrap ret /\ ret <> NoneT ==>
-  (external_call_result_rel tops ret tx (INL v, am, rqs) (Halt ss) <=>
+  (external_call_result_rel tops ret tx (INL v, am, rqs, gs) (Halt ss) <=>
    (?abi_v. vyper_to_abi (type_env tops) ret v = SOME abi_v /\
      ss.vs_returndata =
        enc (Tuple [vyper_to_abi_type (type_env tops) ret]) (ListV [abi_v])) /\
@@ -165,7 +165,7 @@ QED
 (* A concrete successful terminal witness with requests, and a distinct
    request list rejected. Leftover outcomes are intentionally unconstrained. *)
 Theorem lowering_none_return_witness:
-  external_call_result_rel tops NoneT tx (INL v, am, rqs)
+  external_call_result_rel tops NoneT tx (INL v, am, rqs, gs)
     (Halt (ss with <| vs_accounts := am.accounts; vs_transient := am.tStorage;
        vs_logs := am.logs; vs_returndata := []; vs_requests := rqs |>))
 Proof
@@ -174,9 +174,9 @@ Proof
 QED
 
 Theorem lowering_success_requests_exact:
-  external_call_result_rel tops ret tx (INL v, am, rqs) (Halt ss) /\
+  external_call_result_rel tops ret tx (INL v, am, rqs, gs) (Halt ss) /\
   rqs' <> rqs ==>
-  ~external_call_result_rel tops ret tx (INL v, am, rqs)
+  ~external_call_result_rel tops ret tx (INL v, am, rqs, gs)
     (Halt (ss with vs_requests := rqs'))
 Proof
   simp[lowering_success_boundary]
@@ -184,7 +184,7 @@ QED
 
 Theorem lowering_abort_requests_free:
   external_call_result_rel tops ret tx
-    (INR (Error (RuntimeError msg)), am, rqs)
+    (INR (Error (RuntimeError msg)), am, rqs, gs)
     (Abort kind (ss with <| vs_requests := rqs'; vs_outcomes := os |>))
 Proof
   Cases_on `kind` >> simp[external_call_result_rel_def]

@@ -1,7 +1,8 @@
 Theory vyperTestRunner
 Ancestors
   contractABI vyperABIDecode vyperABI vyperInterpreter vyperSmallStep jsonAST
-  jsonToVyper vfmContext vfmExecution vfmTransaction
+  jsonToVyper vfmContext vfmExecution vfmTransaction vyperGasObserver
+  vyperPragueTransaction
 Libs
   cv_transLib wordsLib
 
@@ -43,6 +44,11 @@ Datatype:
   ; callData: byte list
   ; runtimeBytecode: byte list
   ; storageLayout: json_storage_layout
+  ; sourceGasPcs: num list
+  ; sourceGasInitPcs: num list
+  ; initcode: byte list
+  ; gasLimit: num
+  ; blockGasLimit: num
   ; isBlueprint: bool
   |>
 End
@@ -113,6 +119,7 @@ Datatype:
   ; blobHashes: bytes32 list
   ; blobBaseFee: num
   ; gasLimit: num
+  ; blockGasLimit: num
   ; gasPrice: num
   ; chainId: num
   ; static: bool
@@ -178,6 +185,51 @@ val () = increment_account_nonce_def
   |> SRULE [combinTheory.o_DEF, combinTheory.C_DEF]
   |> cv_auto_trans;
 
+Definition gas_observation_block_def:
+  gas_observation_block time number gas_limit =
+    <| baseFeePerGas := 0; excessBlobGas := 0;
+       gasUsed := 0; blobGasUsed := 0; number := number; timeStamp := time;
+       coinBase := 0w; gasLimit := gas_limit; prevRandao := 0w; hash := 0w;
+       parentBeaconBlockRoot := 0w; requestsHash := 0w; stateRoot := 0w;
+       withdrawalsRoot := 0w; transactions := []; withdrawals := [] |>
+End
+
+val () = cv_auto_trans gas_observation_block_def;
+
+(* Transaction entry applies intrinsic cost and value transfer before the
+   frame-local observation. Concrete updates are deliberately not adopted. *)
+Definition transaction_gas_evidence_def:
+  transaction_gas_evidence pcs static chain hashes blk accounts tx =
+    if NULL pcs then SOME [] else
+    case prague_run_create (Collect empty_domain) static chain hashes blk accounts tx of
+      SOME (INR (_, es, NONE)) =>
+        (case selected_gas_execution pcs es of
+           ((INR _, _), gs) => SOME gs
+         | _ => NONE)
+    | _ => NONE
+End
+
+val () = cv_auto_trans transaction_gas_evidence_def;
+
+Definition deployment_gas_evidence_def:
+  deployment_gas_evidence am dt =
+    if NULL dt.sourceGasInitPcs then SOME [] else
+    let sender = lookup_account dt.deployer am.accounts in
+    let tx = <| from := dt.deployer; to := NONE;
+                data := dt.initcode; nonce := sender.nonce;
+                value := dt.value; gasLimit := dt.gasLimit; gasPrice := dt.gasPrice;
+                accessList := []; blobVersionedHashes := dt.blobHashes;
+                maxFeePerBlobGas := NONE; maxFeePerGas := NONE;
+                authorizationList := [] |> in
+    if callee_from_tx_to dt.deployer sender.nonce NONE <> dt.deployedAddress
+    then NONE else
+    transaction_gas_evidence dt.sourceGasInitPcs F dt.chainId dt.blockHashes
+      (gas_observation_block dt.timeStamp dt.blockNumber dt.blockGasLimit)
+      am.accounts tx
+End
+
+val () = cv_auto_trans deployment_gas_evidence_def;
+
 Definition run_deployment_def:
   run_deployment am dt = let
     sns = compute_selector_names dt.contractAbi;
@@ -187,7 +239,10 @@ Definition run_deployment_def:
     argTys = find_args_by_name name dt.contractAbi;
     ar = compute_vyper_args all_mods ts Deploy name argTys dt.callData;
     res = case FST ar of NONE => INR (Error $ RuntimeError "run_deployment args")
-          | SOME args => let
+          | SOME args =>
+    case deployment_gas_evidence am dt of
+      NONE => INR (Error $ RuntimeError "source gas evidence production failed")
+    | SOME gs => let
     tx = <| sender := dt.deployer
           ; target := dt.deployedAddress
           ; function_name := name
@@ -203,12 +258,15 @@ Definition run_deployment_def:
           ; chain_id := dt.chainId
           ; is_creation := T
           ; coinbase := 0w
-          ; gas_limit := 0
+          ; gas_limit := dt.blockGasLimit
           ; base_fee := 0
           ; prev_randao := 0
           ; origin := dt.deployer |>;
-    in case load_contract NONE (increment_account_nonce dt.deployedAddress am)
-                          tx all_mods dt.sourceExports of
+    in let (res,rest) =
+      load_contract NONE gs (increment_account_nonce dt.deployedAddress am)
+                          tx all_mods dt.sourceExports in
+      if ~NULL rest then INR (Error $ RuntimeError "source gas evidence consumption failed")
+      else case res of
          INL (am', _) => INL am'
        | INR ex => INR ex
   in (sns, res)
@@ -233,7 +291,7 @@ Definition call_trace_txn_def:
      ; chain_id := ct.chainId
      ; is_creation := F
      ; coinbase := 0w
-     ; gas_limit := ct.gasLimit
+     ; gas_limit := ct.blockGasLimit
      ; base_fee := 0
      ; prev_randao := 0
      ; origin := ct.sender |>
@@ -242,7 +300,7 @@ End
 val () = cv_auto_trans call_trace_txn_def;
 
 Definition run_call_def:
-  run_call sns am ct = let
+  run_call gs sns am ct = let
     sel = TAKE 4 ct.callData;
     fna = case ALOOKUP sns sel of SOME fna => fna
              | NONE => ("__default__", [], []);
@@ -262,8 +320,8 @@ Definition run_call_def:
     tenv = FST (SND ar);
     retTypes = SND (SND ar);
   in
-    case FST ar of NONE => ((INR (Error $ RuntimeError "run_call args"), am),
-                            (retTys, (retTypes, (FEMPTY, F))))
+    case FST ar of NONE => (((INR (Error $ RuntimeError "run_call args"), am),
+                            (retTys, (retTypes, (FEMPTY, F)))), gs)
   | SOME args => let
     tx = <| sender := ct.sender
           ; target := ct.target
@@ -280,7 +338,7 @@ Definition run_call_def:
           ; chain_id := ct.chainId
           ; is_creation := F
           ; coinbase := 0w
-          ; gas_limit := ct.gasLimit
+          ; gas_limit := ct.blockGasLimit
           ; base_fee := 0
           ; prev_randao := 0
           ; origin := ct.sender |>;
@@ -290,8 +348,8 @@ Definition run_call_def:
        its EVM returndata must be read back, is decided by the interpreter
        (call_external_raw_return) from the declaration call_external runs. *)
     is_raw = call_external_raw_return am tx
-  in (let (res, am', _) = call_external NONE am tx in (res, am'),
-      (retTys, (retTypes, (tenv, is_raw))))
+  in (let (res, am', _, rest) = call_external NONE gs am tx in
+        (((res, am'), (retTys, (retTypes, (tenv, is_raw)))), rest))
 End
 
 val () = cv_auto_trans run_call_def;
@@ -423,6 +481,42 @@ End
 
 val () = cv_auto_trans run_raw_deployment_def;
 
+Definition make_call_block_def:
+  make_call_block (ct: call_trace) =
+    gas_observation_block ct.timeStamp ct.blockNumber ct.blockGasLimit
+End
+
+val () = cv_auto_trans make_call_block_def;
+
+(* Enter through run_create, not the external-call helper: this charges the
+   transaction's intrinsic cost before the first observed instruction. Only
+   the observations escape; the source call below uses the original machine. *)
+Definition source_gas_evidence_def:
+  source_gas_evidence pcs am ct =
+    if NULL pcs then SOME [] else
+    let sender = lookup_account ct.sender am.accounts in
+    let tx = <| from := ct.sender; to := SOME ct.target;
+                data := ct.callData; nonce := sender.nonce; value := ct.value;
+                gasLimit := ct.gasLimit; gasPrice := ct.gasPrice;
+                accessList := []; blobVersionedHashes := ct.blobHashes;
+                maxFeePerBlobGas := NONE; maxFeePerGas := NONE;
+                authorizationList := [] |> in
+    transaction_gas_evidence pcs ct.static ct.chainId ct.blockHashes
+      (make_call_block ct) am.accounts tx
+End
+
+val () = cv_auto_trans source_gas_evidence_def;
+
+Definition source_gas_evidence_failure_def:
+  source_gas_evidence_failure res <=>
+    res = INR (Error (RuntimeError "gas observations exhausted")) \/
+    res = INR (Error (RuntimeError "gas observation out of range")) \/
+    res = INR (Error (RuntimeError "source gas evidence consumption failed")) \/
+    res = INR (Error (RuntimeError "source gas evidence production failed"))
+End
+
+val () = cv_auto_trans source_gas_evidence_failure_def;
+
 Definition run_trace_def:
   run_trace snss am tr =
   case tr
@@ -433,13 +527,15 @@ Definition run_trace_def:
             (update_account dt.deployedAddress
               ((lookup_account dt.deployedAddress am.accounts)
                 with <| code := dt.runtimeBytecode; nonce := 1 |>)) in
-      ((dt.deployedAddress,[])::snss, INL (increment_account_nonce dt.deployer am'))
+      ((dt.deployedAddress,([],dt.sourceGasPcs))::snss,
+       INL (increment_account_nonce dt.deployer am'))
     else let
       (s_layout, t_layout) = extract_storage_layout dt.importMap dt.storageLayout;
       am_with_layout = am with layouts updated_by CONS (dt.deployedAddress, (s_layout, t_layout));
       result = run_deployment am_with_layout dt;
       sns = FST result; res = SND result;
-      res = if dt.deploymentSuccess then
+      res = if source_gas_evidence_failure res then res
+            else if dt.deploymentSuccess then
               (* Set the bytecode in accounts after successful deployment *)
               case res of
                 INL am' => INL (am' with
@@ -453,7 +549,7 @@ Definition run_trace_def:
       res = case res of
               INL am' => INL (increment_account_nonce dt.deployer am')
             | INR e => INR e;
-      snss = (dt.deployedAddress,sns)::snss;
+      snss = (dt.deployedAddress,(sns,dt.sourceGasPcs))::snss;
     in
       (snss, res)
    | RawDeployment dt =>
@@ -482,11 +578,16 @@ Definition run_trace_def:
                            else INR (Error $ RuntimeError "output mismatch"))
                 else if IS_NONE ct.expectedOutput then INL am
                 else INR (Error $ TypeError "sns not found")
-      | SOME sns => let
-        cr = run_call sns am ct;
+      | SOME (sns,pcs) =>
+        case source_gas_evidence pcs am ct of
+          NONE => INR (Error $ RuntimeError "source gas evidence production failed")
+        | SOME gs => let
+        (cr,rest) = run_call gs sns am ct;
         call_res = FST cr;
         am = SND call_res in
-       case FST call_res
+       if ~NULL rest \/ source_gas_evidence_failure (FST call_res)
+       then INR (Error $ RuntimeError "source gas evidence consumption failed")
+       else case FST call_res
        of (* TODO(test-semantics): decide whether AssertException should satisfy expected failure traces. *)
        | INR ex => if IS_NONE ct.expectedOutput then INL am
                    else INR ex

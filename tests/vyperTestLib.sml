@@ -84,7 +84,7 @@ end
 
 val call : term decoder =
   check_trace_type "call" $
-  JSONDecode.map (fn ((a,c,v,t),(p,g,s,(h,bh)),(m,bn,bf,e)) =>
+  JSONDecode.map (fn ((a,c,v,t),(p,g,s,(h,bh)),(m,bn,bf,(e,bgl))) =>
               TypeBase.mk_record (call_trace_ty, [
                 ("sender", s),
                 ("target", t),
@@ -96,6 +96,7 @@ val call : term decoder =
                 ("blobHashes", bh),
                 ("blobBaseFee", bf),
                 ("gasLimit", g),
+                ("blockGasLimit", bgl),
                 ("gasPrice", p),
                 ("chainId", numSyntax.term_of_int 1),
                 ("static", a),
@@ -116,8 +117,9 @@ val call : term decoder =
               field "env" $ field "block" $ field "timestamp" numtm,
               field "env" $ field "block" $ field "number" numtm,
               field "env" $ field "block" $ field "blob_basefee" numtm,
-              field "output" (JSONDecode.map (from_term_option bytes_ty) $
-                              nullable bytes))))
+              tuple2 (field "output" (JSONDecode.map (from_term_option bytes_ty) $
+                              nullable bytes),
+                      field "env" $ field "block" $ field "gas_limit" numtm))))
 
 fun theoptstring NONE = "" | theoptstring (SOME s) = s
 
@@ -240,7 +242,7 @@ val unsupported_code = [
 ]
 
 val unsupported_patterns = unsupported_code @ [
-  "msg.mana", "msg.gas",
+  (* Explicit forwarding and out-of-gas behavior remain outside this slice. *)
   "gas=",
 ]
 
@@ -503,9 +505,42 @@ val raw_deployment : term decoder =
                 | NONE => optionSyntax.mk_none bytes_ty) $
                nullable string)))
 
+(* Metadata is runner-local, not part of the abstract machine. Missing
+   compiler provenance is an error, never an unsupported-test exclusion. *)
+fun source_has_gas (JSON.OBJECT kvs) = let
+      fun find key = Option.map #2 (List.find (fn (k,_) => k = key) kvs)
+      fun text key = case find key of SOME (JSON.STRING s) => SOME s | _ => NONE
+      val here =
+        text "ast_type" = SOME "Attribute" andalso
+        (text "attr" = SOME "gas" orelse text "attr" = SOME "mana") andalso
+        (case find "value" of
+           SOME (JSON.OBJECT value) =>
+             List.exists (fn ("id",JSON.STRING "msg") => true | _ => false) value
+         | _ => false)
+    in here orelse List.exists (source_has_gas o #2) kvs end
+  | source_has_gas (JSON.ARRAY xs) = List.exists source_has_gas xs
+  | source_has_gas _ = false
+
+fun gasPcs label : term decoder =
+  JSONDecode.map (fn kvs => let
+    val j = JSON.OBJECT kvs
+    val blueprint = List.exists
+      (fn ("deployment_type", JSON.STRING "blueprint") => true | _ => false) kvs
+    val pcs = case List.find (fn (k,_) => k = label) kvs of
+        SOME (_,value) => decode (array numtm) value
+      | NONE => if source_has_gas j andalso not blueprint then
+          raise JSONError
+            (Fail ("source gas metadata unavailable (" ^ label ^
+                   "): run tools/enrich_gas_metadata.py"), j)
+        else []
+  in mk_list(pcs, ``:num``) end) rawObject
+
+val sourceGasPcs = gasPcs "source_gas_pcs"
+val sourceGasInitPcs = gasPcs "source_gas_init_pcs"
+
 val deployment : term decoder =
   check_trace_type "deployment" $
-  JSONDecode.map (fn (((((srcs_exps_imap,(i,h,bh),(s,m,a,g),(d,bn,bf,v)),e),bc),sl),bp) =>
+  JSONDecode.map (fn ((((((srcs_exps_imap,(i,h,bh),(s,m,a,g),(d,bn,bf,v)),e),bc),sl),bp),(pcs,(ipcs,ic,gl,bgl))) =>
              (* translate_annotated_ast returns (sources, exports, import_map) *)
              let val (srcs, exps_import_map) = pairSyntax.dest_pair srcs_exps_imap
                  val (exps, import_map) = pairSyntax.dest_pair exps_import_map in
@@ -528,9 +563,14 @@ val deployment : term decoder =
                ("callData", d),
                ("runtimeBytecode", bc),
                ("storageLayout", sl),
+               ("sourceGasPcs", pcs),
+               ("sourceGasInitPcs", ipcs),
+               ("initcode", ic),
+               ("gasLimit", gl),
+               ("blockGasLimit", bgl),
                ("isBlueprint", bp)
              ]) end)
-          (tuple2 (tuple2 (tuple2 (tuple2 (tuple4 (toplevels_via_jsonast,
+          (tuple2 (tuple2 (tuple2 (tuple2 (tuple2 (tuple4 (toplevels_via_jsonast,
                            tuple3 (
                              field "contract_abi" (array abiEntry),
                              field "env" $ field "block" $
@@ -551,7 +591,11 @@ val deployment : term decoder =
                   field "runtime_bytecode" bytes),
                  field "storage_layout" storage_layout),
                 JSONDecode.map (fn s => mk_bool (s = "blueprint"))
-                  (field "deployment_type" string)))
+                  (field "deployment_type" string)),
+                tuple2 (sourceGasPcs,
+                  tuple4 (sourceGasInitPcs, field "initcode" bytes,
+                    field "env" $ field "tx" $ field "gas" numtm,
+                    field "env" $ field "block" $ field "gas_limit" numtm))))
 
 val trace : term decoder =
   andThen (field "trace_type" string) (fn kind =>

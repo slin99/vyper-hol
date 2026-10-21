@@ -1309,8 +1309,7 @@ Definition evaluate_def:
       return $ IntV (&len)
     od else do
       vs <- eval_exprs cx es;
-      acc <- get_accounts;
-      lift_sum $ evaluate_builtin cx acc ty bt vs
+      eval_builtin cx ty bt vs
     od;
     return $ Value v
   od ∧
@@ -1717,6 +1716,7 @@ Definition initial_state_def:
    ; pending_deletions := am.pending_deletions
    ; outcomes := NONE
    ; requests := []
+   ; gas_observations := []
    |>
 End
 
@@ -1808,37 +1808,40 @@ val () = send_call_value_def
   |> cv_auto_trans;
 
 Definition evaluate_defaults_def:
-  evaluate_defaults cx am [] = SOME [] ∧
-  evaluate_defaults cx am (e::es) =
-    (case FST $ eval_expr cx e (initial_state am [FEMPTY]) of
-     | INL (Value v) =>
-         (case evaluate_defaults cx am es of
-          | SOME vs => SOME (v :: vs)
-          | NONE => NONE)
-     | _ => NONE)
+  evaluate_defaults cx am gs [] = (INL [], gs) ∧
+  evaluate_defaults cx am gs (e::es) =
+    (case eval_expr cx e
+       (initial_state am [FEMPTY] with gas_observations := gs) of
+     | (INL (Value v), st) =>
+         (case evaluate_defaults cx am st.gas_observations es of
+          | (INL vs, gs') => (INL (v :: vs), gs')
+          | (INR e, gs') => (INR e, gs'))
+     | (INL _, st) => (INR (Error (RuntimeError "call default value")), st.gas_observations)
+     | (INR e, st) => (INR e, st.gas_observations))
 End
 
 Definition call_external_function_def:
-  call_external_function orc am cx nr mut ts all_mods args dflts vals body ret =
+  call_external_function orc gs am cx nr mut ts all_mods args dflts vals body ret =
   let all_tenv = type_env_all_modules all_mods in
   let n_provided = LENGTH vals in
   let n_expected = LENGTH args in
   let n_missing = n_expected - n_provided in
   if n_provided > n_expected ∨ n_missing > LENGTH dflts then
-    (INR $ Error (RuntimeError "call args length"), am, [])
+    (INR $ Error (RuntimeError "call args length"), am, [], gs)
   else
   let needed_dflts = DROP (LENGTH dflts - n_missing) dflts in
-  case evaluate_defaults cx am needed_dflts of
-  | NONE => (INR $ Error (RuntimeError "call evaluate_defaults"), am, [])
-  | SOME dflt_vs =>
+  case evaluate_defaults cx am gs needed_dflts of
+  | (INR e, gs) => (INR e, am, [], gs)
+  | (INL dflt_vs, gs) =>
   case bind_arguments all_tenv args (vals ++ dflt_vs)
-  of NONE => (INR $ Error (RuntimeError "call bind_arguments"), am, [])
+  of NONE => (INR $ Error (RuntimeError "call bind_arguments"), am, [], gs)
    | SOME env =>
   (case (if cx.in_deploy then evaluate_all_constants cx am cx.txn.target all_mods
          else SOME am)
-   of NONE => (INR $ Error (RuntimeError "call constants_env"), am, [])
+   of NONE => (INR $ Error (RuntimeError "call constants_env"), am, [], gs)
     | SOME am_c =>
-   let st = initial_state am_c [env] with <| outcomes := orc; requests := [] |> in
+   let st = initial_state am_c [env] with
+     <| outcomes := orc; requests := []; gas_observations := gs |> in
    let srcs = am_c.sources in
    let exps = am_c.exports in
    let layouts = am_c.layouts in
@@ -1853,26 +1856,28 @@ Definition call_external_function_def:
      | NONE => return ()
      | SOME slot => release_nonreentrant_lock cx.txn.target slot
      else return () in
-   let (res, am_out, rqs) =
+   let (res, am_out, rqs, gs_rest) =
      (case do lock_action; send_call_value mut cx; eval_stmts cx body od st
       of
        | (INL (), st) =>
            (case unlock_action st of
-            | (INL (), st) => (INL NoneV, abstract_machine_from_state srcs exps layouts st, st.requests)
-            | (INR e, st) => (INR e, am, st.requests))
+            | (INL (), st) =>
+                (INL NoneV, abstract_machine_from_state srcs exps layouts st,
+                 st.requests, st.gas_observations)
+            | (INR e, st) => (INR e, am, st.requests, st.gas_observations))
        | (INR (ReturnException v), st) =>
            (case unlock_action st of
             | (INL (), st) =>
               (let am_ret = abstract_machine_from_state srcs exps layouts st in
                case evaluate_type all_tenv ret
-               of NONE => (INR (Error (TypeError "eval ret")), am, st.requests)
+               of NONE => (INR (Error (TypeError "eval ret")), am, st.requests, st.gas_observations)
                 | SOME tv =>
                case safe_cast tv v
-               of NONE => (INR (Error (TypeError "ext cast ret")), am, st.requests)
-                | SOME v => (INL v, am_ret, st.requests))
-            | (INR e, st) => (INR e, am, st.requests))
-       | (INR e, st) => (INR e, am, st.requests)) in
-    (res, am_out, rqs (* transient storage cleared separately via ClearTransientStorage action *)))
+               of NONE => (INR (Error (TypeError "ext cast ret")), am, st.requests, st.gas_observations)
+                | SOME v => (INL v, am_ret, st.requests, st.gas_observations))
+            | (INR e, st) => (INR e, am, st.requests, st.gas_observations))
+       | (INR e, st) => (INR e, am, st.requests, st.gas_observations)) in
+    (res, am_out, rqs, gs_rest (* transient storage cleared separately via ClearTransientStorage action *)))
 End
 
 (* Lookup function, checking exports first for external calls *)
@@ -1956,24 +1961,25 @@ Proof
 QED
 
 Definition call_external_def:
-  call_external orc am tx =
+  call_external orc gs am tx =
   (* Determine which module to use for type environment *)
   let src_id_opt = find_function_module am tx.target tx.function_name in
   let cx = initial_evaluation_context am.sources am.layouts tx src_id_opt in
   (* Get all modules for this contract (needed for combined type_env) *)
   case ALOOKUP am.sources tx.target of
-    NONE => (INR $ Error (RuntimeError "call get sources"), am, [])
+    NONE => (INR $ Error (RuntimeError "call get sources"), am, [], gs)
   | SOME all_mods =>
   case (case src_id_opt of
           NONE => get_self_code cx
         | SOME src_id => get_module_code cx (SOME src_id))
-  of NONE => (INR $ Error (RuntimeError "call get_self_code"), am, [])
+  of NONE => (INR $ Error (RuntimeError "call get_self_code"), am, [], gs)
    | SOME ts =>
   case lookup_exported_function cx am tx.function_name
-  of NONE => (INR $ Error (RuntimeError "call lookup_function"), am, [])
+  of NONE => (INR $ Error (RuntimeError "call lookup_function"), am, [], gs)
    | SOME (mut, nr, args, dflts, ret, body) =>
-       case call_external_function orc am cx nr mut ts all_mods args dflts tx.args body ret of
-         (INL value, am', rqs) => (INL value, finalize_pending_deletions am', rqs)
+       case call_external_function orc gs am cx nr mut ts all_mods args dflts tx.args body ret of
+         (INL value, am', rqs, gs') =>
+           (INL value, finalize_pending_deletions am', rqs, gs')
        | failure => failure
 End
 
@@ -1999,7 +2005,7 @@ Definition clear_machine_logs_def:
 End
 
 Definition call_external_transaction_def:
-  call_external_transaction orc am tx = call_external orc (clear_machine_logs am) tx
+  call_external_transaction orc gs am tx = call_external orc gs (clear_machine_logs am) tx
 End
 
 (* Vyper-level deployment abstraction.  The target address is supplied by the
@@ -2014,22 +2020,22 @@ End
    same path, including constant evaluation and deployment value transfer.  The
    NONE case below is defensive and unreachable for finite declaration lists. *)
 Definition load_contract_def:
-  load_contract orc am tx mods exps =
+  load_contract orc gs am tx mods exps =
   let addr = tx.target in
   let ts = case ALOOKUP mods NONE of SOME ts => ts | NONE => [] in
   let tenv = type_env_all_modules mods in
   case initial_immutables tenv mods of
-  | NONE => INR $ Error (TypeError "load_contract: evaluate_type failed")
+  | NONE => (INR $ Error (TypeError "load_contract: evaluate_type failed"), gs)
   | SOME imms =>
   let am = am with <| immutables updated_by CONS (addr, imms);
                       exports updated_by CONS (addr, exps) |> in
   case lookup_function NONE tx.function_name Deploy ts of
-     | NONE => INR $ Error (RuntimeError "no constructor")
+     | NONE => (INR $ Error (RuntimeError "no constructor"), gs)
      | SOME (mut, nr, args, dflts, ret, body) =>
        let cx = (initial_evaluation_context ((addr,mods)::am.sources) am.layouts tx NONE)
                 with in_deploy := T in
-       case call_external_function orc am cx nr mut ts mods args dflts tx.args body ret
-         of (INR e, _, _) => INR e
-          | (_, am', rqs) => INL (finalize_pending_deletions
-                                    (am' with sources updated_by CONS (addr, mods)), rqs)
+       case call_external_function orc gs am cx nr mut ts mods args dflts tx.args body ret
+         of (INR e, _, _, gs') => (INR e, gs')
+          | (_, am', rqs, gs') => (INL (finalize_pending_deletions
+                                    (am' with sources updated_by CONS (addr, mods)), rqs), gs')
 End

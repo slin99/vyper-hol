@@ -5,6 +5,10 @@ This is a **completed retirement/provenance ledger**, not a live legacy API.
 All counts/names below concern compiler/call compatibility, not unrelated
 historical pass implementations. There is no old/new equivalence bridge.
 
+Entry triples and signatures below are historical retirement evidence, not the
+current source API. The [current semantics API](../README.md#semantics-semantics)
+also accepts frame-local gas observations and returns their unused suffix.
+
 ## Original text and proof identities
 
 Original statements/proofs are retained verbatim in inactive SOURCECOMMENT

@@ -135,7 +135,7 @@ End
    the exact dynamic strict-decoding exemption on Halt. Error (stuck or fuel
    exhaustion), OK and IntRet are never acceptable results, even if exempt. *)
 Definition external_call_result_rel_def:
-  external_call_result_rel tops ret tx (res, am', rqs) vres <=>
+  external_call_result_rel tops ret tx (res, am', rqs, (gs:num list)) vres <=>
     case (res, vres) of
       (INL v, Halt ss) =>
         return_bytes tops ret v ss.vs_returndata /\
@@ -153,7 +153,7 @@ End
 Definition source_unit_execution_correct_def:
   source_unit_execution_correct tops ret am tx unit vs <=>
     ?fuel. external_call_result_rel tops ret tx
-             (call_external (SOME vs.vs_outcomes) am tx)
+             (call_external (SOME vs.vs_outcomes) [] am tx)
              (run_context fuel unit.cu_context vs)
 End
 
@@ -201,7 +201,7 @@ Theorem lower_vyper_runtime_unit_memory_ok:
     valid_vyper_call tops tx vs.vs_call_ctx.cc_calldata ret /\
     initial_venom_state_rel am tx vs /\
     call_outcomes_ok tops am tx vs.vs_outcomes /\
-    ~source_exempt tops (call_external (SOME vs.vs_outcomes) am tx)
+    ~source_exempt tops (call_external (SOME vs.vs_outcomes) [] am tx)
     ==> raw_unit_memory_ok unit.cu_context vs
 Proof
   cheat

@@ -2704,8 +2704,12 @@ Resume eval_all_storage_preservation_mutual[Expr_Builtin]:
   strip_tac >> first_x_assum drule_all >> strip_tac >>
   Cases_on `args_res` >> gvs[bind_def, return_def, raise_def,
     get_accounts_def, lift_sum_def]
-  >- (Cases_on `evaluate_builtin cx args_st.accounts ty bt x` >>
-      gvs[return_def, raise_def] >> rpt strip_tac >> gvs[]) >>
+  >- (Cases_on `eval_builtin cx ty bt x args_st` >>
+      imp_res_tac eval_builtin_preserves_fields >>
+      Cases_on `q` >> gvs[return_def, raise_def] >>
+      rpt strip_tac >> gvs[] >>
+      irule contract_storage_well_formed_accounts_transient_frame >>
+      qexists_tac `args_st` >> simp[]) >>
   rpt strip_tac >> gvs[]
 QED
 

@@ -1477,7 +1477,7 @@ Theorem constructor_entry_contract_storage_well_formed:
   (!n. read_slot (am.tStorage cx.txn.target) n = 0w) /\
   (!n. read_slot ((am.accounts cx.txn.target).storage) n = 0w) ==>
   contract_storage_well_formed cx
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>)
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>)
 Proof
   strip_tac >> irule zero_read_storage_contract_storage_well_formed >>
   Cases >>
@@ -1490,9 +1490,9 @@ Theorem constructor_entry_runtime_storage_consistent:
   (!n. read_slot ((am.accounts cx.txn.target).storage) n = 0w) /\
   storage_layout_safe cx /\
   runtime_consistent env cx
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>) ==>
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>) ==>
   runtime_storage_consistent env cx
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>)
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>)
 Proof
   simp[runtime_storage_consistent_def] >>
   metis_tac[constructor_entry_contract_storage_well_formed]
@@ -1503,14 +1503,14 @@ Theorem constructor_assign_targets_preserves_runtime_storage_consistent_result:
   (!n. read_slot ((am.accounts cx.txn.target).storage) n = 0w) /\
   storage_layout_safe cx /\
   runtime_consistent env cx
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>) /\
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>) /\
   target_assignment_values_assignable env cx
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>)
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>)
     tgts gvs vs /\
   EVERY (\gv. assign_target_assignable_context cx gv
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>)) gvs /\
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>)) gvs /\
   assign_targets cx gvs vs
-    (initial_state am [scope] with <|outcomes := orc; requests := rqs|>) = (res,st') ==>
+    (initial_state am [scope] with <|outcomes := orc; requests := rqs; gas_observations := gs|>) = (res,st') ==>
   runtime_storage_consistent env cx st' /\ no_type_error_result res
 Proof
   metis_tac[constructor_entry_runtime_storage_consistent,

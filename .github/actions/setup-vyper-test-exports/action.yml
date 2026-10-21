@@ -20,7 +20,7 @@ runs:
       run: |
         sha=$(tr -d '[:space:]' < VYPER_PIN)
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
-        echo "cache-key=vyper-tests-${{ runner.os }}-$sha" >> "$GITHUB_OUTPUT"
+        echo "cache-key=vyper-tests-source-gas-v1-${{ runner.os }}-$sha" >> "$GITHUB_OUTPUT"
 
     - name: Cache exported Vyper tests
       id: cache-vyper-tests
@@ -39,3 +39,5 @@ runs:
         git checkout --detach ${{ steps.vyper-rev.outputs.sha }}
         pip install . --group test
         pytest -s -n0 --export ../tests/vyper-test-exports -m "not fuzzing" tests/functional
+        cd ..
+        python3 tools/enrich_gas_metadata.py --vyper-source vyper-src tests/vyper-test-exports

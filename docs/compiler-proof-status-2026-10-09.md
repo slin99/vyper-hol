@@ -16,6 +16,14 @@ and [earlier drafts/counterexamples](compiler-proof-drafts-and-counterexamples.m
 TASK058/059's [roadmap](compiler-proof-roadmap.md) and
 [twelve local finding reports](findings/README.md) are complete.
 
+The source-entry signatures and gas-observation description below record that
+audit's baseline. The subsequent source-observation API adds a separate gas
+list and returns its unused suffix; see the [current semantics API](../README.md#semantics-semantics)
+and [live compiler boundary](compiler-correctness-specification.md#outcome-oracle-at-the-compiler-boundary).
+The compiler boundary still supplies empty source observations and excludes
+`MsgGas`; this later interpreter support does not extend the audited theorem's
+gas-sensitive scope.
+
 ## Public runtime theorem
 
 The current saved export is `e2eCorrectness.vyper_call_correct`, in

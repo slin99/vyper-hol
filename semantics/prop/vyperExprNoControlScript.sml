@@ -137,6 +137,16 @@ Proof
   >> strip_tac >> gvs[AllCaseEqs(), return_def, raise_def, no_control_exc_def]
 QED
 
+Theorem eval_builtin_no_control:
+  eval_builtin cx ty bt vs s = (INR exc,s') ==> no_control_exc exc
+Proof
+  Cases_on `bt = Env MsgGas /\ vs = []` >>
+  gvs[eval_builtin_def]
+  >- (Cases_on `s.gas_observations` >>
+      gvs[observe_msg_gas_def, AllCaseEqs(), no_control_exc_def]) >>
+  metis_tac[lift_sum_no_control]
+QED
+
 Theorem lift_sum_runtime_no_control:
   ∀x s exc s'.
   lift_sum_runtime x s = (INR exc, s') ⇒ no_control_exc exc
@@ -523,7 +533,7 @@ QED
 val helpers = [eval_create_no_control, check_create_blueprint_no_control,
                check_no_control, type_check_no_control,
                lift_option_no_control, lift_option_type_no_control,
-               lift_sum_no_control, lift_sum_runtime_no_control,
+               lift_sum_no_control, lift_sum_runtime_no_control, eval_builtin_no_control,
                get_Value_no_control, read_storage_slot_no_control,
                materialise_no_control, toplevel_array_length_no_control,
                check_array_bounds_no_control, transfer_value_no_control,
@@ -1228,4 +1238,15 @@ Theorem eval_expr_no_control:
     no_control_exc exc)
 Proof
   metis_tac[eval_expr_no_control_with_bt]
+QED
+
+Theorem evaluate_defaults_no_control:
+  !es cx am gs e gs'.
+    evaluate_defaults cx am gs es = (INR e,gs') ==> no_control_exc e
+Proof
+  Induct >> simp[evaluate_defaults_def] >>
+  rpt gen_tac >> strip_tac >>
+  gvs[evaluate_defaults_def, AllCaseEqs()] >>
+  imp_res_tac eval_expr_no_control >> gvs[no_control_exc_def] >>
+  first_x_assum drule_all >> simp[no_control_exc_def]
 QED

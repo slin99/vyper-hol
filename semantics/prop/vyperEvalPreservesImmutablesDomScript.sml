@@ -1651,8 +1651,9 @@ Proof
     (first_x_assum (qspec_then `st` mp_tac) >>
      simp[check_def, type_check_def, assert_def, return_def]) >>
   gvs[bind_def, AllCaseEqs(), return_def, raise_def, get_accounts_def] >>
-  Cases_on `evaluate_builtin cx s'³'.accounts ty bt vs` >>
-  gvs[return_def, raise_def]
+  imp_res_tac eval_builtin_preserves_fields >>
+  irule preserves_immutables_dom_trans >> goal_assum drule >>
+  irule preserves_immutables_dom_eq >> gvs[]
 QED
 
 (* ----- Case: eval_expr (TypeBuiltin tb typ es) ----- *)

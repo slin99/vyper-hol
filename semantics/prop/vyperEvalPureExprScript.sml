@@ -77,7 +77,8 @@ Definition eval_pure_expr_def:
 
   (* General builtins *)
   eval_pure_expr cx st (Builtin ty bt es) =
-    (if bt = Len then
+    (if bt = Env MsgGas then NONE
+     else if bt = Len then
        (case es of
         | [e] =>
           (case eval_pure_expr cx st e of
@@ -227,7 +228,7 @@ Proof
       simp monadic_defs >>
       TRY (drule vyperStatePreservationTheory.toplevel_array_length_state >>
            simp[vyperContextTheory.builtin_args_length_ok_def]) >>
-      simp[vyperStateTheory.get_accounts_def] >>
+      simp[vyperStateTheory.eval_builtin_def, vyperStateTheory.get_accounts_def] >>
       simp monadic_defs)
   (* TypeBuiltin *)
   >- (rpt gen_tac >>
@@ -432,7 +433,8 @@ Proof
           simp[] >>
           `s1 = st` by metis_tac[eval_exprs_preserves_state] >>
           pop_assum SUBST_ALL_TAC >>
-          fs[vyperStateTheory.get_accounts_def, vyperStateTheory.return_def,
+          fs[vyperStateTheory.eval_builtin_def,
+             vyperStateTheory.get_accounts_def, vyperStateTheory.return_def,
              vyperStateTheory.bind_def, vyperStateTheory.lift_sum_def] >>
           Cases_on `evaluate_builtin cx st.accounts ty bt vs` >>
           gvs[vyperStateTheory.return_def, vyperStateTheory.raise_def]))

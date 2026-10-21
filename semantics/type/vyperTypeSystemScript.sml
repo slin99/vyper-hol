@@ -217,7 +217,7 @@ Definition well_typed_builtin_app_def:
   well_typed_builtin_app ty BlockHash ts = (ts = [BaseT (UintT 256)] /\ ty = BaseT (BytesT (Fixed 32))) /\
   well_typed_builtin_app ty BlobHash ts = (ts = [BaseT (UintT 256)] /\ ty = BaseT (BytesT (Fixed 32))) /\
   well_typed_builtin_app ty (Env item) ts =
-    (ts = [] /\ ty = env_item_type item /\ item <> MsgGas) /\
+    (ts = [] /\ ty = env_item_type item) /\
   well_typed_builtin_app ty (Acc item) ts =
     (LENGTH ts = 1 /\ HD ts = BaseT AddressT /\ ty = account_item_type item) /\
   well_typed_builtin_app ty MethodId ts =

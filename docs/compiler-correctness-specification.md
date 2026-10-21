@@ -141,19 +141,19 @@ appends our logs; failure rolls back to the saved snapshot without appending
 failed-frame logs. This defined boundary and selected witnesses are not a proof
 of S7 or of environmental satisfiability.
 
-### Outcome oracle, not a source gas oracle
+### Outcome oracle at the compiler boundary
 
 `call_trace es` is the ordered request/outcome trace of **our frame**, not the
 trace of every descendant instruction. Requests contain target/value/calldata,
 static flag and live pre-call account/transient snapshots; outcomes contain
 success, return bytes, post-call accounts/transient storage and logs. Source
-`call_external (SOME (MAP SND (call_trace es))) am tx`, Venom and assembly take
+`call_external (SOME (MAP SND (call_trace es))) [] am tx`, Venom and assembly take
 these outcomes instead of executing callees. Successful nonstatic outcomes
 adopt accounts (including storage/code), transient storage and logs; static and
 failed outcomes do not adopt payloads. The source's NONE mode still executes
-concrete calls and the two-argument initializer still starts with NONE/empty
-requests. Arbitrary source SOME lists use this **same evaluator**, not a second
-source semantics.
+concrete calls and the two-argument initializer still starts with NONE, empty
+requests and empty source gas observations. Arbitrary source SOME lists use
+this **same evaluator**, not a second source semantics.
 
 Computed value-zero precompiles1/2/6/7 are computed from pure input, consume no
 outcome and record no request; they are filtered out of `call_trace`. Other
@@ -176,9 +176,13 @@ records readiness/input/constants/protected-storage/oracle hypotheses.
 The shared entry Venom state has **cc_gas=0**, concrete assembly labels and plan
 FMP fields. Venom GAS is untouched, with opaque GAS results restricted to
 CALL/STATICCALL gas operands; oracle call semantics evaluate then ignore those
-values. Assembly uses frame-local EVM gas readings. There is **no caller-read
-gas oracle**, source `msg.gas` guarantee or `gas=` keyword guarantee. The old
-2026-09-29 gas-oracle account of this design is superseded by the outcome oracle.
+values. Assembly uses frame-local EVM gas readings. The source interpreter also
+supports a separate frame-local gas-observation list for concrete
+`msg.gas`/`msg.mana` replay; that list is `[]` at this compiler boundary, and
+`MsgGas` remains excluded by the compiler's supported-expression predicate.
+These compiler theorems establish **no source-gas observation provenance**,
+source `msg.gas` guarantee or `gas=` keyword guarantee. The old 2026-09-29
+gas-oracle account of the compiler design is superseded by the outcome oracle.
 
 ### Observations, resources and limits
 

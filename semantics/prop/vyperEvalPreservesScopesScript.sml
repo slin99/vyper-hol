@@ -1856,10 +1856,11 @@ Proof
         AllCaseEqs(), COND_RATOR, return_def] >>
     imp_res_tac type_check_state >>
     imp_res_tac lift_sum_state >>
+    imp_res_tac eval_builtin_preserves_fields >>
     imp_res_tac materialise_state >>
     imp_res_tac toplevel_array_length_state >> gvs[] >>
     rpt(first_x_assum drule >> rw[]) >>
-    gvs[get_accounts_def, return_def]) >>
+    gvs[get_accounts_def, return_def, preserves_tv_def]) >>
   (* Pop *)
   conj_tac >- (
     rpt gen_tac >> strip_tac >> rpt gen_tac >> strip_tac >>
