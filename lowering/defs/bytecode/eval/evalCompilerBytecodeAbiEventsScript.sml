@@ -239,6 +239,10 @@ val mixed_event_types_codegen_step2 = SIMP_CONV pure_ss
   (rhs (concl mixed_event_types_codegen_step1))
 val mixed_event_types_codegen_assembly_eval =
   TRANS mixed_event_types_codegen_step1 mixed_event_types_codegen_step2
+val mixed_event_types_final_runtime_eval = EVAL
+  (mk_comb
+    (``OPTION_MAP assemble``,
+     rhs (concl mixed_event_types_codegen_assembly_eval)))
 val mixed_event_types_runtime_accessors =
   CONJUNCTS venomCompilerTypesTheory.pipeline_output_accessors @
   CONJUNCTS venomCompilerTypesTheory.resolved_compiler_policy_accessors
@@ -259,6 +263,7 @@ Proof
      mixed_event_types_runtime_accessors) >>
   PURE_REWRITE_TAC [codegenTheory.finalize_codegen_identity] >>
   PURE_REWRITE_TAC [mixed_event_types_codegen_assembly_eval] >>
+  PURE_REWRITE_TAC [mixed_event_types_final_runtime_eval] >>
   EVAL_TAC
 QED
 
@@ -283,7 +288,40 @@ Proof
        mixed_event_types_runtime_pipeline_def,
        mixed_event_types_deploy_compile_def,
        checked_unit_pipeline_def] >>
-  rpt CASE_TAC >> gvs[]
+  Cases_on `resolve_o1_policy (o1_policy all_capabilities)` >- simp[] >>
+  rename1 `resolve_o1_policy (o1_policy all_capabilities) = SOME rpolicy` >>
+  simp[] >>
+  Cases_on `lower_vyper_runtime_unit tops rpolicy` >- simp[] >>
+  rename1 `lower_vyper_runtime_unit tops rpolicy = SOME runtime_unit` >>
+  simp[] >>
+  Cases_on
+    `run_venom_pipeline (K T) (K T) (K T) rpolicy
+       o1_pipeline_spec runtime_unit` >- simp[] >>
+  rename1
+    `run_venom_pipeline (K T) (K T) (K T) rpolicy
+       o1_pipeline_spec runtime_unit = SOME runtime_out` >>
+  simp[] >>
+  Cases_on
+    `runtime_out.po_final_assembly <> rpolicy.rpol_final_assembly` >- simp[] >>
+  simp[] >>
+  Cases_on `finalize_codegen (K SOME) rpolicy runtime_out.po_unit` >- simp[] >>
+  rename1
+    `finalize_codegen (K SOME) rpolicy runtime_out.po_unit = SOME runtime` >>
+  simp[] >>
+  Cases_on `lower_vyper_deploy_unit tops rpolicy runtime` >- simp[] >>
+  rename1 `lower_vyper_deploy_unit tops rpolicy runtime = SOME deploy_unit` >>
+  simp[] >>
+  Cases_on
+    `run_venom_pipeline (K T) (K T) (K T) rpolicy
+       o1_pipeline_spec deploy_unit` >- simp[] >>
+  rename1
+    `run_venom_pipeline (K T) (K T) (K T) rpolicy
+       o1_pipeline_spec deploy_unit = SOME deploy_out` >>
+  simp[] >>
+  Cases_on
+    `deploy_out.po_final_assembly <> rpolicy.rpol_final_assembly` >- simp[] >>
+  simp[] >>
+  Cases_on `finalize_codegen (K SOME) rpolicy deploy_out.po_unit` >> simp[]
 QED
 
 val () = evalCompilerBytecodeLib.add_staged_compile_eval
